@@ -42,7 +42,7 @@ def load_employee_data():
                 "ประเภทบัญชี": str(row["ประเภทบัญชี"]) if pd.notna(row["ประเภทบัญชี"]) else "-",
                 "รหัสบัญชี": str(row["รหัสบัญชี"]) if pd.notna(row["รหัสบัญชี"]) else "-",
                 "Role": role,
-                "is_regular": True # แท็กว่าเป็นพนักงานประจำ
+                "is_regular": True 
             }
         return emp_dict
     except Exception as e:
@@ -70,12 +70,9 @@ shift_data = {
 
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
-# --- ฟังก์ชันช่วยจัดเรียงชื่อคนมาแทนให้อยู่ต่อจากคนประจำ ---
 def sort_roster_by_role(df, emp_dict):
     temp_df = df.copy()
     role_last_idx = {}
-    
-    # หาบรรทัดสุดท้ายของพนักงานประจำในแต่ละ Role
     for idx, row in temp_df.iterrows():
         name = str(row['ชื่อ-สกุล']).strip()
         role = str(row['Role (หน้าที่)']).strip()
@@ -87,14 +84,13 @@ def sort_roster_by_role(df, emp_dict):
         name = str(row['ชื่อ-สกุล']).strip()
         role = str(row['Role (หน้าที่)']).strip()
         info = emp_dict.get(f"{name}_{role}", {})
-        
         if info.get('is_regular', False):
-            return row.name * 1000 # คนประจำให้อยู่ที่เดิม
+            return row.name * 1000 
         else:
             if role in role_last_idx:
-                return role_last_idx[role] * 1000 + row.name + 1 # คนมาแทน ให้ต่อท้ายคนประจำ
+                return role_last_idx[role] * 1000 + row.name + 1 
             else:
-                return 999000 + row.name # ถ้าไม่มีคนประจำ Role นี้เลย ให้ไปต่อท้ายสุด
+                return 999000 + row.name 
                 
     temp_df['sort_key'] = temp_df.apply(get_sort_key, axis=1)
     temp_df = temp_df.sort_values('sort_key').reset_index(drop=True)
@@ -107,7 +103,7 @@ def sort_roster_by_role(df, emp_dict):
 st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน")
 col_g1, col_g2 = st.columns(2)
 with col_g1:
-    val_13 = st.text_input("เดือนตัวเต็ม [13]", "มิถุนายน")
+    val_13 = st.text_input("เดือนตัวเต็ม [13]", "สิงหาคม")
     val_7 = st.text_input("คำสั่งแขวง [7]", "5110/2520/2569")
 with col_g2:
     val_8 = st.text_input("วันที่ลงคำสั่ง [8]", "29 พ.ค. 69")
@@ -129,7 +125,6 @@ if 'roster_df' not in st.session_state:
         data.append(row)
     df = pd.DataFrame(data)
     for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
-    # จัดเรียงตั้งแต่ตอนเริ่มต้น
     st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
 
 with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (เสียบชื่อต่อจากคนประจำอัตโนมัติ)"):
@@ -159,21 +154,17 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
                         "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": new_id, 
                         "เงินเดือน": new_salary, "เรท": new_rate, "ประเภทบัญชี": new_acctype, 
                         "รหัสบัญชี": new_acccode, "Role": new_role,
-                        "is_regular": False # แท็กว่าเป็นคนมาแทน
+                        "is_regular": False
                     }
                     new_idx = len(st.session_state.roster_df) + 1
                     new_row = {"ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
                     for d in range(1, 32): new_row[str(d)] = ""
                     new_df = pd.DataFrame([new_row])
-                    
-                    # เพิ่มเข้า DataFrame แล้วสั่งจัดเรียงใหม่ทันที
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
                     st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
-                    
                     st.success(f"เพิ่ม '{new_name}' เรียบร้อย! ระบบจัดเรียงให้อยู่หมวดหมู่ {new_role} แล้ว")
                     st.rerun()
 
-# เครื่องมือช่วยกรอกเวร
 with st.expander("⚡ เครื่องมือช่วยกรอกเวรแบบด่วน (เติมรหัสเวรหลายวันรวดเดียว)"):
     with st.form("bulk_fill_form"):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
@@ -210,7 +201,6 @@ for d in range(1, 32): column_config[str(d)] = st.column_config.TextColumn(str(d
 edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
 st.session_state.roster_df = edited_df
 
-# อัปเดตข้อมูลหากมีการแก้ Role ในตาราง
 for _, row in edited_df.iterrows():
     name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
     key = f"{name}_{role}"
@@ -287,14 +277,13 @@ if st.button("🔍 กดเพื่อตรวจสอบความถู�
 
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109 (ดึงตารางหน้าเว็บลงไฟล์ 100%)
+# 4. ฟังก์ชันสร้างไฟล์ 109 
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except: return None
     ws = wb.active
     
-    # 1. หยอดตัวแปรส่วนกลาง
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     
     for r in range(1, 100):
@@ -310,15 +299,12 @@ def generate_109(global_vars, roster_df):
             except AttributeError:
                 pass
                 
-    # 2. นำข้อมูลทั้งหมดจากตารางเว็บ ไปเขียนทับลงไฟล์ Excel เรียงลำดับใหม่เลย
-    # (เริ่มที่บรรทัด 8 และขยับลงทีละ 2 บรรทัด)
     current_excel_row = 8
     
     for idx, row_data in roster_df.iterrows():
         emp_name = str(row_data['ชื่อ-สกุล']).strip()
         emp_pos = str(row_data['ตำแหน่งเบิก']).strip()
         
-        # ใช้ try-except ป้องกัน Error จาก MergedCell 100% ในทุกๆ ช่องที่เขียน
         try: ws.cell(row=current_excel_row, column=1).value = idx + 1
         except AttributeError: pass
         
@@ -328,7 +314,6 @@ def generate_109(global_vars, roster_df):
         try: ws.cell(row=current_excel_row+1, column=2).value = emp_pos
         except AttributeError: pass
         
-        # เขียนรหัสเวร วันที่ 1-31
         for d in range(1, 32):
             shift = row_data[str(d)]
             val = str(shift).strip() if pd.notna(shift) else ""
@@ -337,8 +322,7 @@ def generate_109(global_vars, roster_df):
                     
         current_excel_row += 2
         
-    # 3. ล้างรายชื่อและเวรในบรรทัดที่เหลือ (กรณีเดือนนี้มีคนเข้าเวรน้อยกว่าตารางเปล่า)
-    while current_excel_row <= 80: # เผื่อตารางลึกลงไปถึง 80 บรรทัด
+    while current_excel_row <= 80: 
         try: ws.cell(row=current_excel_row, column=1).value = ""
         except AttributeError: pass
         try: ws.cell(row=current_excel_row, column=2).value = ""
@@ -348,16 +332,17 @@ def generate_109(global_vars, roster_df):
         for d in range(1, 32):
             try: ws.cell(row=current_excel_row, column=2+d).value = ""
             except AttributeError: pass
-            
         current_excel_row += 2
                     
-    wsp = ws.sheet_properties
-    if not wsp.pageSetUpPr: wsp.pageSetUpPr = PageSetupProperties()
-    wsp.pageSetUpPr.fitToPage = True
-    wsp.page_setup.fitToWidth = 1
-    wsp.page_setup.fitToHeight = False
-    wsp.page_setup.paperSize = ws.PAPERSIZE_A4
-    wsp.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    # แก้ไขการตั้งค่าหน้ากระดาษ
+    if not ws.sheet_properties.pageSetUpPr: 
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties()
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0 
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     
     output = io.BytesIO()
     wb.save(output)
@@ -411,9 +396,9 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
             ws.cell(row=row, column=5, value="-"); ws.cell(row=row, column=6, value="-")
             ws.cell(row=row, column=7, value="-")
             
-    wsp = ws.sheet_properties
-    if not wsp.pageSetUpPr: wsp.pageSetUpPr = PageSetupProperties()
-    wsp.pageSetUpPr.fitToPage = True
+    if not ws.sheet_properties.pageSetUpPr: 
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties()
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToHeight = 1
     ws.page_setup.fitToWidth = 1
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
