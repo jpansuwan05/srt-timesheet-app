@@ -114,6 +114,18 @@ def generate_excel(emp_name, month_name, roster_data):
 # ==========================================
 # 4. ปุ่มออกใบเบิก
 # ==========================================
+# ----------------------------------------------------
+    # บังคับตั้งค่าให้พอดี 1 หน้ากระดาษอัตโนมัติ (Fit to Page)
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToHeight = 1
+    ws.page_setup.fitToWidth = 1
+    # ----------------------------------------------------
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
 st.markdown("---")
 st.subheader("🖨️ 2. สร้างใบเบิกค่าตอบแทน")
 
