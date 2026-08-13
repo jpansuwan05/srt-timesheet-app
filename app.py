@@ -93,7 +93,7 @@ column_config = {
 for d in range(1, 32):
     column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
 
-edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config)
+edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
 st.session_state.roster_df = edited_df
 
 # ==========================================
