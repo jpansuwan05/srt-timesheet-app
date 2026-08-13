@@ -21,7 +21,6 @@ def load_employee_data():
             name = str(row["รายชื่อ"]).strip()
             pos = str(row["ตำแหน่ง"]).strip() if pd.notna(row["ตำแหน่ง"]) else "-"
             
-            # แปลงตำแหน่งประจำให้เป็น Role ตั้งต้น
             p_clean = pos.replace(" ", "")
             role = pos
             if "นายสถานี" in p_clean: role = "นสน."
@@ -32,7 +31,6 @@ def load_employee_data():
             elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
             elif "บางระมาด" in p_clean: role = "กั้นถนนฯบางระมาด"
 
-            # ใช้ "ชื่อ_Role" เป็น Key เพื่อรองรับ 1 คน หลาย Role
             unique_key = f"{name}_{role}"
             
             emp_dict[unique_key] = {
@@ -43,7 +41,8 @@ def load_employee_data():
                 "เรท": float(row["เรท 1 ชั่วโมง"]) if pd.notna(row["เรท 1 ชั่วโมง"]) else 0,
                 "ประเภทบัญชี": str(row["ประเภทบัญชี"]) if pd.notna(row["ประเภทบัญชี"]) else "-",
                 "รหัสบัญชี": str(row["รหัสบัญชี"]) if pd.notna(row["รหัสบัญชี"]) else "-",
-                "Role": role 
+                "Role": role,
+                "is_regular": True # แท็กว่าเป็นพนักงานประจำ
             }
         return emp_dict
     except Exception as e:
@@ -57,10 +56,8 @@ if 'employees' not in st.session_state:
     st.session_state.employees = loaded_data
 
 shift_data = {
-    "ว": {"text": "(06.00-18.00) น.", "hours": 4},
-    "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
-    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4},
-    "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
     "0-12": {"text": "(00.00-12.00) น.", "hours": 4}, "00-12": {"text": "(00.00-12.00) น.", "hours": 4},
     "12-24": {"text": "(12.00-24.00) น.", "hours": 4}, "00-24": {"text": "(00.00-24.00) น.", "hours": 4},
     "(ว)": {"text": "(06.00-18.00) น.", "hours": 4}, "(ค)": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
@@ -73,17 +70,48 @@ shift_data = {
 
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
+# --- ฟังก์ชันช่วยจัดเรียงชื่อคนมาแทนให้อยู่ต่อจากคนประจำ ---
+def sort_roster_by_role(df, emp_dict):
+    temp_df = df.copy()
+    role_last_idx = {}
+    
+    # หาบรรทัดสุดท้ายของพนักงานประจำในแต่ละ Role
+    for idx, row in temp_df.iterrows():
+        name = str(row['ชื่อ-สกุล']).strip()
+        role = str(row['Role (หน้าที่)']).strip()
+        info = emp_dict.get(f"{name}_{role}", {})
+        if info.get('is_regular', False):
+            role_last_idx[role] = idx
+            
+    def get_sort_key(row):
+        name = str(row['ชื่อ-สกุล']).strip()
+        role = str(row['Role (หน้าที่)']).strip()
+        info = emp_dict.get(f"{name}_{role}", {})
+        
+        if info.get('is_regular', False):
+            return row.name * 1000 # คนประจำให้อยู่ที่เดิม
+        else:
+            if role in role_last_idx:
+                return role_last_idx[role] * 1000 + row.name + 1 # คนมาแทน ให้ต่อท้ายคนประจำ
+            else:
+                return 999000 + row.name # ถ้าไม่มีคนประจำ Role นี้เลย ให้ไปต่อท้ายสุด
+                
+    temp_df['sort_key'] = temp_df.apply(get_sort_key, axis=1)
+    temp_df = temp_df.sort_values('sort_key').reset_index(drop=True)
+    temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
+    return temp_df.drop(columns=['sort_key'])
+
 # ==========================================
 # 2. ข้อมูลส่วนกลาง
 # ==========================================
 st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน")
 col_g1, col_g2 = st.columns(2)
 with col_g1:
-    val_13 = st.text_input("เดือนตัวเต็ม [13] (เช่น มิถุนายน)", "มิถุนายน")
-    val_7 = st.text_input("คำสั่งแขวง [7] (เช่น 5110/2520/2569)", "5110/2520/2569")
+    val_13 = st.text_input("เดือนตัวเต็ม [13]", "มิถุนายน")
+    val_7 = st.text_input("คำสั่งแขวง [7]", "5110/2520/2569")
 with col_g2:
-    val_8 = st.text_input("วันที่ลงคำสั่ง [8] (เช่น 29 พ.ค. 69)", "29 พ.ค. 69")
-    val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14] (เช่น 01 ก.ค. 69)", "01 ก.ค. 69")
+    val_8 = st.text_input("วันที่ลงคำสั่ง [8]", "29 พ.ค. 69")
+    val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", "01 ก.ค. 69")
 
 global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
 
@@ -101,9 +129,10 @@ if 'roster_df' not in st.session_state:
         data.append(row)
     df = pd.DataFrame(data)
     for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
-    st.session_state.roster_df = df
+    # จัดเรียงตั้งแต่ตอนเริ่มต้น
+    st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
 
-with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (1 คนเพิ่มซ้ำได้หาก Role ไม่เหมือนกัน)"):
+with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (เสียบชื่อต่อจากคนประจำอัตโนมัติ)"):
     with st.form("add_emp_form"):
         c1, c2, c3, c4 = st.columns(4)
         new_name = c1.text_input("ชื่อ-สกุล*")
@@ -124,40 +153,39 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
             else:
                 unique_key = f"{new_name}_{new_role}"
                 if unique_key in st.session_state.employees:
-                    st.error(f"มีรายชื่อ '{new_name}' ใน Role '{new_role}' อยู่ในระบบแล้ว (กรุณาเลือก Role อื่น)")
+                    st.error(f"มีรายชื่อ '{new_name}' ใน Role '{new_role}' อยู่ในระบบแล้ว")
                 else:
                     st.session_state.employees[unique_key] = {
                         "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": new_id, 
                         "เงินเดือน": new_salary, "เรท": new_rate, "ประเภทบัญชี": new_acctype, 
-                        "รหัสบัญชี": new_acccode, "Role": new_role 
+                        "รหัสบัญชี": new_acccode, "Role": new_role,
+                        "is_regular": False # แท็กว่าเป็นคนมาแทน
                     }
                     new_idx = len(st.session_state.roster_df) + 1
                     new_row = {"ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
                     for d in range(1, 32): new_row[str(d)] = ""
                     new_df = pd.DataFrame([new_row])
-                    st.session_state.roster_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
-                    st.success(f"เพิ่ม '{new_name}' (หน้าที่ {new_role}) ลงตารางเรียบร้อย!")
+                    
+                    # เพิ่มเข้า DataFrame แล้วสั่งจัดเรียงใหม่ทันที
+                    updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
+                    st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
+                    
+                    st.success(f"เพิ่ม '{new_name}' เรียบร้อย! ระบบจัดเรียงให้อยู่หมวดหมู่ {new_role} แล้ว")
                     st.rerun()
 
-# --- เครื่องมือช่วยกรอกเวรแบบด่วน (Bulk Fill) ---
+# เครื่องมือช่วยกรอกเวร
 with st.expander("⚡ เครื่องมือช่วยกรอกเวรแบบด่วน (เติมรหัสเวรหลายวันรวดเดียว)"):
     with st.form("bulk_fill_form"):
-        st.markdown("พิมพ์รหัสเวร แล้วเลือกว่าจะเติมให้ใคร ตั้งแต่วันไหนถึงวันไหน (กดปุ๊บตารางจะอัปเดตอัตโนมัติ)")
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-        
         emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
         target_emp = c1.selectbox("1. เลือกพนักงาน", emp_options)
         target_shift = c2.text_input("2. กรอกรหัสเวร (เช่น ว, ค, ย)")
         start_day = c3.number_input("3. ใส่วันที่เริ่มต้น", min_value=1, max_value=31, value=1)
         end_day = c4.number_input("4. ใส่วันที่สิ้นสุด", min_value=1, max_value=31, value=31)
         
-        submit_fill = st.form_submit_button("เติมข้อมูลเวรทันที!")
-        
-        if submit_fill:
-            if target_shift.strip() == "":
-                st.warning("กรุณากรอกรหัสเวรก่อนครับ")
-            elif start_day > end_day:
-                st.warning("วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุดครับ")
+        if st.form_submit_button("เติมข้อมูลเวรทันที!"):
+            if target_shift.strip() == "": st.warning("กรุณากรอกรหัสเวรก่อนครับ")
+            elif start_day > end_day: st.warning("วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุด")
             else:
                 raw_name = target_emp.split(" (")[0]
                 raw_role = target_emp.split(" (")[1].replace(")", "")
@@ -165,12 +193,10 @@ with st.expander("⚡ เครื่องมือช่วยกรอกเ�
                     (st.session_state.roster_df['ชื่อ-สกุล'] == raw_name) & 
                     (st.session_state.roster_df['Role (หน้าที่)'] == raw_role)
                 ].index
-                
                 if not match_idx.empty:
-                    idx = match_idx[0]
                     for d in range(start_day, end_day + 1):
-                        st.session_state.roster_df.at[idx, str(d)] = target_shift.strip()
-                    st.success(f"เติมเวร '{target_shift}' ให้ '{raw_name}' ตั้งแต่วันที่ {start_day} ถึง {end_day} สำเร็จ!")
+                        st.session_state.roster_df.at[match_idx[0], str(d)] = target_shift.strip()
+                    st.success(f"เติมเวรสำเร็จ!")
                     st.rerun()
 
 column_config = {
@@ -179,22 +205,19 @@ column_config = {
     "ตำแหน่งเบิก": st.column_config.TextColumn("ตำแหน่งเบิก", width="medium"), 
     "Role (หน้าที่)": st.column_config.SelectboxColumn("Role (หน้าที่)", options=roles_list, width="small")
 }
-for d in range(1, 32):
-    column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
+for d in range(1, 32): column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
 
 edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
 st.session_state.roster_df = edited_df
 
-# อัปเดตข้อมูลพนักงานกลับ กรณีมีการแก้ชื่อ/Role ผ่านตาราง
+# อัปเดตข้อมูลหากมีการแก้ Role ในตาราง
 for _, row in edited_df.iterrows():
-    name = str(row['ชื่อ-สกุล']).strip()
-    role = str(row['Role (หน้าที่)']).strip()
+    name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
     key = f"{name}_{role}"
     if key in st.session_state.employees:
         st.session_state.employees[key]['Role'] = role
         st.session_state.employees[key]['ชื่อ-สกุล'] = name
         st.session_state.employees[key]['ตำแหน่ง'] = row['ตำแหน่งเบิก']
-
 
 # ==========================================
 # 3.5 ระบบตรวจสอบเงื่อนไข (Validation)
@@ -213,22 +236,15 @@ def get_shift_hours(shift_str):
 def validate_roster(roster_df):
     errors = []
     for d in range(1, 32):
-        day = str(d)
-        role_hours = {}
-        
-        nai_satanee_off = False
-        nai_satanee_shift = ""
+        day, role_hours, nai_satanee_off, nai_satanee_shift = str(d), {}, False, ""
         
         for _, row in roster_df.iterrows():
-            name = str(row['ชื่อ-สกุล']).strip()
-            role = str(row['Role (หน้าที่)']).strip()
-            shift = str(row[day]).strip()
+            name, role, shift = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip(), str(row[day]).strip()
             if not shift: continue
             
             if role == "นสน.":
                 nai_satanee_shift = shift
-                if shift in ['ย', 'พ', 'ป', 'ก', 'ย.', 'พ.', 'ป.', 'ก.']:
-                    nai_satanee_off = True
+                if shift in ['ย', 'พ', 'ป', 'ก', 'ย.', 'พ.', 'ป.', 'ก.']: nai_satanee_off = True
                     
             h_set = get_shift_hours(shift)
             group_key = "ช.นสน.รวม" if role in ["ช.นสน.1", "ช.นสน.2"] else role
@@ -238,7 +254,7 @@ def validate_roster(roster_df):
             
         for name, shift, h_set, l_role in role_hours.get("นสน.", []):
             if not nai_satanee_off and len(h_set) > 0:
-                errors.append(f"🔴 วันที่ {d}: '{name}' เข้าเวร นสน. ไม่ได้ เนื่องจาก นสน.ประจำ ไม่ได้ลา (ลงเวร {nai_satanee_shift})")
+                errors.append(f"🔴 วันที่ {d}: '{name}' เข้าเวร นสน. ไม่ได้ เนื่องจาก นสน.ประจำ ไม่ได้ลา")
             
             allowed = ['ว', 'ค', 'ค/ว', 'ว/ค', '00-12', '0-12', '12-24', '00-24']
             clean_shift = shift.replace('(', '').replace(')', '')
@@ -271,7 +287,7 @@ if st.button("🔍 กดเพื่อตรวจสอบความถู�
 
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109
+# 4. ฟังก์ชันสร้างไฟล์ 109 (ล้างข้อมูลเก่าและเขียนใหม่ให้เป็นระเบียบ)
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
@@ -280,6 +296,7 @@ def generate_109(global_vars, roster_df):
     
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     
+    # หยอดตัวแปรส่วนกลาง
     for r in range(1, 100):
         for c in range(1, 40):
             cell = ws.cell(row=r, column=c)
@@ -288,37 +305,22 @@ def generate_109(global_vars, roster_df):
                 for key, val in replacements_109.items(): new_val = new_val.replace(key, str(val))
                 cell.value = new_val
                 
-    grouped_df = roster_df.groupby('ชื่อ-สกุล').agg(lambda x: ' '.join(set([str(i) for i in x if str(i).strip()]))).reset_index()
-    
-    for idx, row_data in grouped_df.iterrows():
-        emp_name = row_data['ชื่อ-สกุล'].strip()
-        emp_pos = roster_df[roster_df['ชื่อ-สกุล'] == emp_name].iloc[0]['ตำแหน่งเบิก']
-        
-        found_row = None
-        for r in range(1, 100):
-            if str(ws.cell(row=r, column=2).value).strip() == emp_name:
-                found_row = r
-                break
-                
-        # --- จุดที่แก้ไข (ป้องกัน Error MergedCell) ---
-        if not found_row:
-            for r in range(7, 100): 
-                c1 = ws.cell(row=r, column=1)
-                c2 = ws.cell(row=r, column=2)
-                
-                # เช็คว่าเป็นช่องปกติ (ไม่ใช่ MergedCell) และช่องชื่อ (Col 2) ยังว่างอยู่
-                if type(c1).__name__ != 'MergedCell' and c2.value is None:
-                    c1.value = idx + 1
-                    c2.value = emp_name
-                    ws.cell(row=r+1, column=2, value=emp_pos)
-                    found_row = r
-                    break
-        # ---------------------------------------------
-        
-        if found_row:
-            for d in range(1, 32):
-                shift = row_data[str(d)]
-                ws.cell(row=found_row, column=2+d, value=shift if pd.notna(shift) else "")
+    # 🌟 ล้างรายชื่อและเวรเดิมออกจากเทมเพลต (ป้องกันการซ้อนทับและ MergedCell)
+    for r in range(8, 100, 2): 
+        ws.cell(row=r, column=2, value="")     # ล้างชื่อ
+        ws.cell(row=r+1, column=2, value="")   # ล้างตำแหน่ง
+        for c in range(3, 34):
+            ws.cell(row=r, column=c, value="") # ล้างเวร
+            
+    # นำรายชื่อที่เรียงแล้ว มาใส่ลงในช่อง (ช่องละ 2 บรรทัด)
+    current_row = 8
+    for idx, row_data in roster_df.iterrows():
+        ws.cell(row=current_row, column=2, value=row_data['ชื่อ-สกุล'].strip())
+        ws.cell(row=current_row+1, column=2, value=row_data['ตำแหน่งเบิก'].strip())
+        for d in range(1, 32):
+            shift = row_data[str(d)]
+            ws.cell(row=current_row, column=2+d, value=shift if pd.notna(shift) else "")
+        current_row += 2
                     
     wsp = ws.sheet_properties
     if not wsp.pageSetUpPr: wsp.pageSetUpPr = PageSetupProperties()
@@ -332,6 +334,7 @@ def generate_109(global_vars, roster_df):
     wb.save(output)
     output.seek(0)
     return output
+
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ 177
 # ==========================================
@@ -410,16 +413,14 @@ with tab1:
 with tab2:
     st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก 177**")
     
-    active_emp_options = []
-    for _, r in st.session_state.roster_df.iterrows():
-        n = str(r['ชื่อ-สกุล']).strip()
-        rl = str(r['Role (หน้าที่)']).strip()
-        active_emp_options.append(f"{n}_{rl}")
-        
-    selected_key_177 = st.selectbox("เลือกพนักงานและ Role ที่ต้องการเบิก 177", active_emp_options)
+    active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
+    selected_key_177_display = st.selectbox("เลือกพนักงานและ Role ที่ต้องการเบิก 177", active_emp_options)
     
-    if selected_key_177:
-        sel_name, sel_role = selected_key_177.split('_', 1)
+    if selected_key_177_display:
+        sel_name = selected_key_177_display.split(" (")[0]
+        sel_role = selected_key_177_display.split(" (")[1].replace(")", "")
+        selected_key_177 = f"{sel_name}_{sel_role}"
+        
         st.write(f"กำลังออกใบเบิกให้: **{sel_name}** (ในหน้าที่ **{sel_role}**)")
 
         if f'ind_data_{selected_key_177}' not in st.session_state:
@@ -441,7 +442,7 @@ with tab2:
         with c4:
             st.session_state[f'ind_data_{selected_key_177}']['val_12'] = st.text_input("รวมพักผ่อน [12]", st.session_state[f'ind_data_{selected_key_177}']['val_12'])
 
-        if st.button(f"ออกใบเบิก 177 ของ {sel_name} ({sel_role})", type="primary"):
+        if st.button(f"ออกใบเบิก 177 ของ {sel_name}", type="primary"):
             emp_row = st.session_state.roster_df[
                 (st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & 
                 (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)
