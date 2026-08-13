@@ -128,7 +128,6 @@ if 'roster_df' not in st.session_state:
     for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
     st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
 
-# เผื่อผู้ใช้เก่าไม่มีคอลัมน์ 'ขึ้นหน้าใหม่'
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
@@ -325,8 +324,8 @@ def generate_109(global_vars, roster_df):
         page_num = page_idx + 1
         page_data = pages[page_idx]
         
-        # 3.1 หยอดตัวแปรส่วนกลาง และ เลขหน้า
-        for r in range(1, 15):
+        # 3.1 หยอดตัวแปรส่วนกลาง และ เลขหน้า (เช็คให้ครบ 100 บรรทัด)
+        for r in range(1, 100):
             for c in range(1, 40):
                 try:
                     cell = ws.cell(row=r, column=c)
@@ -336,15 +335,15 @@ def generate_109(global_vars, roster_df):
                         if "[" in new_val:
                             for key, val_rep in replacements_109.items(): 
                                 new_val = new_val.replace(key, str(val_rep))
-                        # ค้นหาคำว่า "หน้า 1/2" หรือคล้ายๆ กัน แล้วแทนที่
+                        # เปลี่ยนเลขหน้า
                         if "หน้า" in new_val and "/" in new_val:
                             new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
                         cell.value = new_val
                 except AttributeError:
                     pass
                     
-        # 3.2 ล้างข้อมูลตารางเก่าออกทั้งหมดก่อนเขียนใหม่
-        for r in range(8, 80, 2):
+        # 3.2 ล้างข้อมูลตารางเก่าออกทั้งหมดก่อนเขียนใหม่ (ล้างถึงแค่แถวที่ 36 เท่านั้น เพื่อรักษาข้อความด้านล่างไว้)
+        for r in range(8, 37, 2):
             try: ws.cell(row=r, column=1).value = ""
             except AttributeError: pass
             try: ws.cell(row=r, column=2).value = ""
@@ -355,7 +354,7 @@ def generate_109(global_vars, roster_df):
                 try: ws.cell(row=r, column=2+d).value = ""
                 except AttributeError: pass
                 
-        # 3.3 หยอดรายชื่อและเวรของหน้านี้
+        # 3.3 หยอดรายชื่อและเวรของหน้านี้ (เขียนข้อมูลไม่เกินแถวที่ 37 แน่นอนเพราะล็อคไว้หน้าละ 15 คน)
         current_excel_row = 8
         for row_data in page_data:
             list_idx = row_data['ลำดับ']
@@ -382,7 +381,7 @@ def generate_109(global_vars, roster_df):
             ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1
-        ws.page_setup.fitToHeight = 1 # ล็อคให้แต่ละชีตมีแค่หน้าเดียวเป๊ะๆ
+        ws.page_setup.fitToHeight = 0 # 0 เพื่อไม่ให้มันไปบีบหน้าจนพัง
         ws.page_setup.paperSize = ws.PAPERSIZE_A4
         ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     
