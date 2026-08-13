@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+from openpyxl.worksheet.properties import PageSetupProperties
 import io
 import datetime
 
@@ -54,32 +55,31 @@ edited_df = st.data_editor(df_roster, hide_index=True)
 st.session_state.roster[selected_emp] = edited_df.iloc[0].to_dict()
 
 # ==========================================
-# 3. ฟังก์ชัน หยอดข้อมูลลงไฟล์ Excel ต้นฉบับ
+# 3. ฟังก์ชัน หยอดข้อมูลและตั้งค่าหน้ากระดาษ
 # ==========================================
 def generate_excel(emp_name, month_name, roster_data):
     emp_info = employees[emp_name]
     rate = emp_info["เรท"]
     
-    # โหลดไฟล์ต้นฉบับที่คุณตั้งค่าหน้ากระดาษไว้แล้ว
     try:
         wb = openpyxl.load_workbook("ใบเบิก 177.xlsx")
     except FileNotFoundError:
-        st.error("❌ ไม่พบไฟล์ 'ใบเบิก 177.xlsx' ในระบบ! กรุณาอัปโหลดไฟล์นี้เข้า GitHub คู่กับโค้ดด้วยครับ")
+        st.error("❌ ไม่พบไฟล์ 'ใบเบิก 177.xlsx' กรุณาอัปโหลดไฟล์นี้เข้า GitHub ด้วยครับ")
         return None
         
     ws = wb.active
 
-    # แทนที่ข้อความหัวกระดาษ (เดือน และ ข้อมูลพนักงาน)
+    # แทนที่ข้อความหัวกระดาษ
     year = datetime.datetime.now().year + 543
     ws.cell(row=3, column=1, value=f"ประจำเดือน {month_name} พ.ศ. {year}")
     
     info_text = f"ชื่อ  {emp_name}      ตำแหน่ง  {emp_info['ตำแหน่ง']}      เลขประจำตัว  {emp_info['เลขประจำตัว']}      อัตราเงินเดือน  {emp_info['เงินเดือน']} บาท      ฝ่าย  ฝ่ายปฏิบัติการเดินรถ"
     ws.cell(row=4, column=1, value=info_text)
 
-    # แทนที่ชื่อจุดเซ็นผู้เบิก
+    # แทนที่ชื่อจุดเซ็น
     ws.cell(row=44, column=2, value=f"({emp_name})")
 
-    # หยอดข้อมูลเวร 31 วัน (เริ่มที่บรรทัด 7)
+    # หยอดข้อมูลเวร
     start_row = 7
     for day in range(1, 32):
         row = start_row + day - 1
@@ -93,7 +93,6 @@ def generate_excel(emp_name, month_name, roster_data):
             ws.cell(row=row, column=6, value=int(shift_data[shift]["hours"]) * rate)
             ws.cell(row=row, column=7, value="00")
         else:
-            # ถ้าเป็นวันหยุด หรือ ไม่มีเวร ให้ใส่ขีด -
             if shift == "ย": ws.cell(row=row, column=2, value="ย.")
             elif shift == "พ": ws.cell(row=row, column=2, value="พ.")
             else: ws.cell(row=row, column=2, value="-")
@@ -104,8 +103,19 @@ def generate_excel(emp_name, month_name, roster_data):
             ws.cell(row=row, column=6, value="-")
             ws.cell(row=row, column=7, value="-")
 
-    # เราไม่ต้องคำนวณยอดรวม เพราะไฟล์ใบเบิก 177.xlsx มีสูตร =SUM() และ =BAHTTEXT() ไว้แล้ว!
-    
+    # ----------------------------------------------------
+    # การตั้งค่าหน้ากระดาษ (บังคับ Fit to 1 Page อัตโนมัติ)
+    # ----------------------------------------------------
+    wsp = ws.sheet_properties
+    if not wsp.pageSetUpPr:
+        wsp.pageSetUpPr = PageSetupProperties()
+    wsp.pageSetUpPr.fitToPage = True
+
+    ws.page_setup.fitToHeight = 1
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -114,18 +124,6 @@ def generate_excel(emp_name, month_name, roster_data):
 # ==========================================
 # 4. ปุ่มออกใบเบิก
 # ==========================================
-# ----------------------------------------------------
-    # บังคับตั้งค่าให้พอดี 1 หน้ากระดาษอัตโนมัติ (Fit to Page)
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToHeight = 1
-    ws.page_setup.fitToWidth = 1
-    # ----------------------------------------------------
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
-
 st.markdown("---")
 st.subheader("🖨️ 2. สร้างใบเบิกค่าตอบแทน")
 
@@ -134,7 +132,7 @@ if st.button(f"ออกเอกสารใบเบิก ของ {selected
     excel_file = generate_excel(selected_emp, selected_month, roster)
     
     if excel_file:
-        st.success(f"ดึงฟอร์ม 'ใบเบิก 177.xlsx' มากรอกข้อมูลให้ {selected_emp} สำเร็จ!")
+        st.success(f"เตรียมฟอร์มของ {selected_emp} สำเร็จ! (ตั้งค่าพอดี A4 อัตโนมัติแล้ว)")
         st.download_button(
             label="📥 ดาวน์โหลดไฟล์ Excel พร้อมพริ้นต์",
             data=excel_file,
