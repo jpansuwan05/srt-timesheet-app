@@ -287,41 +287,65 @@ if st.button("🔍 กดเพื่อตรวจสอบความถู�
 
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109 (ล้างข้อมูลเก่าและเขียนใหม่ให้เป็นระเบียบ)
+# 4. ฟังก์ชันสร้างไฟล์ 109 (แบบปลอดภัย ไม่ทำไฟล์พัง)
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except: return None
     ws = wb.active
     
+    # 1. หยอดตัวแปรส่วนกลาง (วันที่, คำสั่ง)
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     
-    # หยอดตัวแปรส่วนกลาง
     for r in range(1, 100):
         for c in range(1, 40):
             cell = ws.cell(row=r, column=c)
-            if cell.value and isinstance(cell.value, str) and "[" in cell.value:
-                new_val = cell.value
-                for key, val in replacements_109.items(): new_val = new_val.replace(key, str(val))
-                cell.value = new_val
+            # เช็คค่าอย่างปลอดภัย ป้องกัน error
+            val = cell.value
+            if val and isinstance(val, str) and "[" in val:
+                new_val = val
+                for key, val_rep in replacements_109.items(): 
+                    new_val = new_val.replace(key, str(val_rep))
                 
-    # 🌟 ล้างรายชื่อและเวรเดิมออกจากเทมเพลต (ป้องกันการซ้อนทับและ MergedCell)
-    for r in range(8, 100, 2): 
-        ws.cell(row=r, column=2, value="")     # ล้างชื่อ
-        ws.cell(row=r+1, column=2, value="")   # ล้างตำแหน่ง
-        for c in range(3, 34):
-            ws.cell(row=r, column=c, value="") # ล้างเวร
-            
-    # นำรายชื่อที่เรียงแล้ว มาใส่ลงในช่อง (ช่องละ 2 บรรทัด)
-    current_row = 8
-    for idx, row_data in roster_df.iterrows():
-        ws.cell(row=current_row, column=2, value=row_data['ชื่อ-สกุล'].strip())
-        ws.cell(row=current_row+1, column=2, value=row_data['ตำแหน่งเบิก'].strip())
-        for d in range(1, 32):
-            shift = row_data[str(d)]
-            ws.cell(row=current_row, column=2+d, value=shift if pd.notna(shift) else "")
-        current_row += 2
+                # เขียนค่ากลับอย่างระมัดระวัง (ถ้าเป็นช่อง Merged ระบบอาจจะไม่ยอมให้แก้ตรงๆ ถ้าชี้ไปผิดช่องย่อย)
+                # เราใช้ try-except ครอบไว้เผื่อเกิด Error กับช่อง MergedCell
+                try:
+                    cell.value = new_val
+                except AttributeError:
+                    pass 
+                
+    # 2. หยอดรหัสเวร โดยอิงจากการ "ค้นหาชื่อ" ที่มีอยู่ในตาราง 109 เปล่าอยู่แล้ว
+    # (ระบบจะไม่พยายามสร้างบรรทัดใหม่ เพื่อป้องกัน MergedCell Error)
+    
+    # กรุ๊ปข้อมูลคนเดียวกันเข้าด้วยกัน
+    grouped_df = roster_df.groupby('ชื่อ-สกุล').agg(lambda x: ' '.join(set([str(i) for i in x if str(i).strip()]))).reset_index()
+    
+    for _, row_data in grouped_df.iterrows():
+        emp_name = row_data['ชื่อ-สกุล'].strip()
+        
+        # วิ่งหาบรรทัดที่มีชื่อตรงกันในคอลัมน์ที่ 2 (B)
+        found_row = None
+        for r in range(1, 100):
+            try:
+                cell_val = str(ws.cell(row=r, column=2).value).strip()
+                if cell_val == emp_name:
+                    found_row = r
+                    break
+            except AttributeError:
+                pass # ข้ามถ้าเป็น MergedCell ที่อ่านค่าไม่ได้
+                
+        # ถ้าหาชื่อเจอ หยอดรหัสเวรได้เลย (คอลัมน์เริ่มที่ 3 เป็นต้นไป)
+        if found_row:
+            for d in range(1, 32):
+                shift = row_data[str(d)]
+                if pd.notna(shift) and str(shift).strip() != "":
+                    try:
+                        # สมมติช่องเวรเริ่มที่คอลัมน์ C(3) ในวันที่ 1
+                        ws.cell(row=found_row, column=2+d, value=str(shift).strip())
+                    except AttributeError:
+                        pass
                     
+    # ตั้งค่าหน้ากระดาษ
     wsp = ws.sheet_properties
     if not wsp.pageSetUpPr: wsp.pageSetUpPr = PageSetupProperties()
     wsp.pageSetUpPr.fitToPage = True
