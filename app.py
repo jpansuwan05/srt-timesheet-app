@@ -208,3 +208,16 @@ if st.button(f"ออกเอกสารใบเบิก ของ {selected
         file_name=f"ใบเบิก_{selected_emp}_{selected_month}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+# 1. ตั้งค่าให้เป็นกระดาษ A4 แนวตั้ง
+ws.page_setup.paperSize = ws.PAPERSIZE_A4
+ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+
+# 2. บังคับให้บีบตารางให้พอดี 1 หน้ากระดาษ (Fit to 1 page wide by 1 page tall)
+ws.page_setup.fitToPage = True
+ws.page_setup.fitToHeight = 1
+ws.page_setup.fitToWidth = 1
+
+# 3. ตั้งค่าขอบกระดาษ (Margin) ให้แคบลง เพื่อให้แบบฟอร์มดูใหญ่และไม่ถูกบีบจนเกินไป
+from openpyxl.worksheet.page import PageMargins
+ws.page_margins = PageMargins(left=0.25, right=0.25, top=0.5, bottom=0.5, header=0.3, footer=0.3)
