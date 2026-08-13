@@ -287,72 +287,77 @@ if st.button("🔍 กดเพื่อตรวจสอบความถู�
 
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109 (แบบปลอดภัย ไม่ทำไฟล์พัง)
+# 4. ฟังก์ชันสร้างไฟล์ 109 (ดึงตารางหน้าเว็บลงไฟล์ 100%)
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except: return None
     ws = wb.active
     
-    # 1. หยอดตัวแปรส่วนกลาง (วันที่, คำสั่ง)
+    # 1. หยอดตัวแปรส่วนกลาง
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     
     for r in range(1, 100):
         for c in range(1, 40):
-            cell = ws.cell(row=r, column=c)
-            # เช็คค่าอย่างปลอดภัย ป้องกัน error
-            val = cell.value
-            if val and isinstance(val, str) and "[" in val:
-                new_val = val
-                for key, val_rep in replacements_109.items(): 
-                    new_val = new_val.replace(key, str(val_rep))
-                
-                # เขียนค่ากลับอย่างระมัดระวัง (ถ้าเป็นช่อง Merged ระบบอาจจะไม่ยอมให้แก้ตรงๆ ถ้าชี้ไปผิดช่องย่อย)
-                # เราใช้ try-except ครอบไว้เผื่อเกิด Error กับช่อง MergedCell
-                try:
-                    cell.value = new_val
-                except AttributeError:
-                    pass 
-                
-    # 2. หยอดรหัสเวร โดยอิงจากการ "ค้นหาชื่อ" ที่มีอยู่ในตาราง 109 เปล่าอยู่แล้ว
-    # (ระบบจะไม่พยายามสร้างบรรทัดใหม่ เพื่อป้องกัน MergedCell Error)
-    
-    # กรุ๊ปข้อมูลคนเดียวกันเข้าด้วยกัน
-    grouped_df = roster_df.groupby('ชื่อ-สกุล').agg(lambda x: ' '.join(set([str(i) for i in x if str(i).strip()]))).reset_index()
-    
-    for _, row_data in grouped_df.iterrows():
-        emp_name = row_data['ชื่อ-สกุล'].strip()
-        
-        # วิ่งหาบรรทัดที่มีชื่อตรงกันในคอลัมน์ที่ 2 (B)
-        found_row = None
-        for r in range(1, 100):
             try:
-                cell_val = str(ws.cell(row=r, column=2).value).strip()
-                if cell_val == emp_name:
-                    found_row = r
-                    break
+                cell = ws.cell(row=r, column=c)
+                val = cell.value
+                if val and isinstance(val, str) and "[" in val:
+                    new_val = val
+                    for key, val_rep in replacements_109.items(): 
+                        new_val = new_val.replace(key, str(val_rep))
+                    cell.value = new_val
             except AttributeError:
-                pass # ข้ามถ้าเป็น MergedCell ที่อ่านค่าไม่ได้
+                pass
                 
-        # ถ้าหาชื่อเจอ หยอดรหัสเวรได้เลย (คอลัมน์เริ่มที่ 3 เป็นต้นไป)
-        if found_row:
-            for d in range(1, 32):
-                shift = row_data[str(d)]
-                if pd.notna(shift) and str(shift).strip() != "":
-                    try:
-                        # สมมติช่องเวรเริ่มที่คอลัมน์ C(3) ในวันที่ 1
-                        ws.cell(row=found_row, column=2+d, value=str(shift).strip())
-                    except AttributeError:
-                        pass
+    # 2. นำข้อมูลทั้งหมดจากตารางเว็บ ไปเขียนทับลงไฟล์ Excel เรียงลำดับใหม่เลย
+    # (เริ่มที่บรรทัด 8 และขยับลงทีละ 2 บรรทัด)
+    current_excel_row = 8
+    
+    for idx, row_data in roster_df.iterrows():
+        emp_name = str(row_data['ชื่อ-สกุล']).strip()
+        emp_pos = str(row_data['ตำแหน่งเบิก']).strip()
+        
+        # ใช้ try-except ป้องกัน Error จาก MergedCell 100% ในทุกๆ ช่องที่เขียน
+        try: ws.cell(row=current_excel_row, column=1).value = idx + 1
+        except AttributeError: pass
+        
+        try: ws.cell(row=current_excel_row, column=2).value = emp_name
+        except AttributeError: pass
+        
+        try: ws.cell(row=current_excel_row+1, column=2).value = emp_pos
+        except AttributeError: pass
+        
+        # เขียนรหัสเวร วันที่ 1-31
+        for d in range(1, 32):
+            shift = row_data[str(d)]
+            val = str(shift).strip() if pd.notna(shift) else ""
+            try: ws.cell(row=current_excel_row, column=2+d).value = val
+            except AttributeError: pass
                     
-    # ตั้งค่าหน้ากระดาษ
+        current_excel_row += 2
+        
+    # 3. ล้างรายชื่อและเวรในบรรทัดที่เหลือ (กรณีเดือนนี้มีคนเข้าเวรน้อยกว่าตารางเปล่า)
+    while current_excel_row <= 80: # เผื่อตารางลึกลงไปถึง 80 บรรทัด
+        try: ws.cell(row=current_excel_row, column=1).value = ""
+        except AttributeError: pass
+        try: ws.cell(row=current_excel_row, column=2).value = ""
+        except AttributeError: pass
+        try: ws.cell(row=current_excel_row+1, column=2).value = ""
+        except AttributeError: pass
+        for d in range(1, 32):
+            try: ws.cell(row=current_excel_row, column=2+d).value = ""
+            except AttributeError: pass
+            
+        current_excel_row += 2
+                    
     wsp = ws.sheet_properties
     if not wsp.pageSetUpPr: wsp.pageSetUpPr = PageSetupProperties()
     wsp.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = False
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    wsp.page_setup.fitToWidth = 1
+    wsp.page_setup.fitToHeight = False
+    wsp.page_setup.paperSize = ws.PAPERSIZE_A4
+    wsp.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     
     output = io.BytesIO()
     wb.save(output)
