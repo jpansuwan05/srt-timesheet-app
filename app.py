@@ -300,14 +300,20 @@ def generate_109(global_vars, roster_df):
                 found_row = r
                 break
                 
+        # --- จุดที่แก้ไข (ป้องกัน Error MergedCell) ---
         if not found_row:
             for r in range(7, 100): 
-                if ws.cell(row=r, column=1).value is None and ws.cell(row=r, column=2).value is None:
-                    ws.cell(row=r, column=1, value=idx+1)
-                    ws.cell(row=r, column=2, value=emp_name)
+                c1 = ws.cell(row=r, column=1)
+                c2 = ws.cell(row=r, column=2)
+                
+                # เช็คว่าเป็นช่องปกติ (ไม่ใช่ MergedCell) และช่องชื่อ (Col 2) ยังว่างอยู่
+                if type(c1).__name__ != 'MergedCell' and c2.value is None:
+                    c1.value = idx + 1
+                    c2.value = emp_name
                     ws.cell(row=r+1, column=2, value=emp_pos)
                     found_row = r
                     break
+        # ---------------------------------------------
         
         if found_row:
             for d in range(1, 32):
@@ -326,7 +332,6 @@ def generate_109(global_vars, roster_df):
     wb.save(output)
     output.seek(0)
     return output
-
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ 177
 # ==========================================
