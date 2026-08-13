@@ -97,9 +97,9 @@ edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_cont
 st.session_state.roster_df = edited_df
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109
+# 4. ฟังก์ชันสร้างไฟล์ 109 (อัปเดตสแกนทั้งแผ่น)
 # ==========================================
-def generate_109(month_full, roster_df):
+def generate_109(global_vars, roster_df):
     try:
         wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except FileNotFoundError:
@@ -107,14 +107,25 @@ def generate_109(month_full, roster_df):
         return None
     ws = wb.active
     
-    # หยอดเดือนตัวเต็ม
-    for r in range(1, 15):
-        for c in range(1, 15):
-            val = ws.cell(row=r, column=c).value
-            if val and isinstance(val, str) and "[13]" in val:
-                ws.cell(row=r, column=c, value=val.replace("[13]", month_full))
+    # 1. หยอดข้อมูลส่วนกลาง (คำสั่ง, วันที่, เดือน) ทั้งหมด
+    replacements_109 = {
+        "[14]": global_vars["val_14"],
+        "[13]": global_vars["val_13"],
+        "[8]": global_vars["val_8"],
+        "[7]": global_vars["val_7"]
+    }
+    
+    # สแกนหาทั่วทั้งหน้ากระดาษ (เผื่อไว้ถึงบรรทัดที่ 100)
+    for r in range(1, 100):
+        for c in range(1, 40):
+            cell = ws.cell(row=r, column=c)
+            if cell.value and isinstance(cell.value, str) and "[" in cell.value and "]" in cell.value:
+                new_val = cell.value
+                for key, val in replacements_109.items():
+                    new_val = new_val.replace(key, str(val))
+                cell.value = new_val
                 
-    # หยอดรหัสเวรตามรายชื่อ
+    # 2. หยอดรหัสเวรตามรายชื่อ (1-31 วัน)
     for r in range(1, 100):
         name_val = ws.cell(row=r, column=2).value
         if name_val and isinstance(name_val, str):
@@ -125,13 +136,13 @@ def generate_109(month_full, roster_df):
                     shift = emp_row[str(d)]
                     ws.cell(row=r, column=2+d, value=shift if pd.notna(shift) else "")
                     
-    # ตั้งค่าหน้ากระดาษเป็นแนวนอน
+    # ตั้งค่าหน้ากระดาษเป็นแนวนอนและบีบพอดีหน้า
     wsp = ws.sheet_properties
     if not wsp.pageSetUpPr:
         wsp.pageSetUpPr = PageSetupProperties()
     wsp.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = False # ปล่อยความสูงอิสระ
+    ws.page_setup.fitToHeight = False # ปล่อยความสูงให้รันไปตามจำนวนพนักงาน
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     
@@ -139,7 +150,6 @@ def generate_109(month_full, roster_df):
     wb.save(output)
     output.seek(0)
     return output
-
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ 177
 # ==========================================
@@ -216,12 +226,13 @@ tab1, tab2 = st.tabs(["📄 ส่งออก 109 (ตารางเวรร�
 with tab1:
     st.markdown("**ตารางเวร 109 ของทั้งสถานี**")
     if st.button("คลิกเพื่อสร้างไฟล์ 109", type="primary"):
-        excel_109 = generate_109(global_data["val_13"], st.session_state.roster_df)
+        # แก้ไขให้ส่ง global_data ทั้งก้อนเข้าไปแทน
+        excel_109 = generate_109(global_data, st.session_state.roster_df)
         if excel_109:
             st.success(f"สร้างไฟล์ 109 ประจำเดือน {global_data['val_13']} สำเร็จ!")
             st.download_button("📥 ดาวน์โหลดไฟล์ 109", data=excel_109, file_name=f"109_{global_data['val_13']}.xlsx")
 
-# แท็บส่งออก 177
+# แท็บส่งออก 177 (เหมือนเดิม)
 with tab2:
     st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก 177**")
     selected_emp_177 = st.selectbox("เลือกพนักงานที่ต้องการเบิก 177", list(employees.keys()))
@@ -246,7 +257,6 @@ with tab2:
         st.session_state[f'ind_data_{selected_emp_177}']['val_12'] = st.text_input("รวมพักผ่อน [12]", st.session_state[f'ind_data_{selected_emp_177}']['val_12'])
 
     if st.button(f"ออกใบเบิก 177 ของ {selected_emp_177}", type="primary"):
-        # ดึงเวรของคนนี้ 1-31 จากตารางใหญ่ด้านบน
         emp_row = st.session_state.roster_df[st.session_state.roster_df['ชื่อ-สกุล'] == selected_emp_177].iloc[0]
         roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
         
