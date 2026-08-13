@@ -4,6 +4,7 @@ import openpyxl
 from openpyxl.worksheet.properties import PageSetupProperties
 import io
 import datetime
+import re
 
 st.set_page_config(page_title="SRT Timesheet App", layout="wide")
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
@@ -120,12 +121,16 @@ st.subheader("🗓️ 2. จัดการตารางเวร 1-31 วั�
 if 'roster_df' not in st.session_state:
     data = []
     for i, (key, info) in enumerate(st.session_state.employees.items()):
-        row = {"ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
+        row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
         for d in range(1, 32): row[str(d)] = ""
         data.append(row)
     df = pd.DataFrame(data)
     for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
     st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
+
+# เผื่อผู้ใช้เก่าไม่มีคอลัมน์ 'ขึ้นหน้าใหม่'
+if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
+    st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
 with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (เสียบชื่อต่อจากคนประจำอัตโนมัติ)"):
     with st.form("add_emp_form"):
@@ -157,7 +162,7 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
                         "is_regular": False
                     }
                     new_idx = len(st.session_state.roster_df) + 1
-                    new_row = {"ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
+                    new_row = {"ขึ้นหน้าใหม่": False, "ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
                     for d in range(1, 32): new_row[str(d)] = ""
                     new_df = pd.DataFrame([new_row])
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
@@ -191,6 +196,7 @@ with st.expander("⚡ เครื่องมือช่วยกรอกเ�
                     st.rerun()
 
 column_config = {
+    "ขึ้นหน้าใหม่": st.column_config.CheckboxColumn("ขึ้นหน้าใหม่", help="ติ๊กถูกหากต้องการให้ชื่อนี้เป็นคนแรกของหน้าถัดไป", width="small", default=False),
     "ลำดับ": st.column_config.NumberColumn("ลำดับ", width="small", disabled=True),
     "ชื่อ-สกุล": st.column_config.TextColumn("ชื่อ-สกุล", width="medium"), 
     "ตำแหน่งเบิก": st.column_config.TextColumn("ตำแหน่งเบิก", width="medium"), 
@@ -277,77 +283,113 @@ if st.button("🔍 กดเพื่อตรวจสอบความถู�
 
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109 
+# 4. ฟังก์ชันสร้างไฟล์ 109 (ระบบ Pagination และ Run เลขหน้า)
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
-    except: return None
-    ws = wb.active
+    except: return None, 0
     
+    # 1. จัดเรียงข้อมูล แบ่งเป็นหน้าๆ (หน้าละไม่เกิน 15 คน)
+    pages = []
+    current_page_rows = []
+    
+    for idx, row in roster_df.iterrows():
+        force_new_page = row.get("ขึ้นหน้าใหม่", False)
+        
+        if len(current_page_rows) >= 15 or (force_new_page and len(current_page_rows) > 0):
+            pages.append(current_page_rows)
+            current_page_rows = []
+            
+        current_page_rows.append(row)
+        
+    if current_page_rows:
+        pages.append(current_page_rows)
+        
+    total_pages = len(pages) if len(pages) > 0 else 1
+    if len(pages) == 0: pages = [[]]
+        
+    # 2. คัดลอก Worksheet ตามจำนวนหน้าจริง
+    template_ws = wb.active
+    template_ws.title = "หน้าที่ 1"
+    
+    worksheets = [template_ws]
+    for p in range(2, total_pages + 1):
+        new_ws = wb.copy_worksheet(template_ws)
+        new_ws.title = f"หน้าที่ {p}"
+        worksheets.append(new_ws)
+        
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     
-    for r in range(1, 100):
-        for c in range(1, 40):
-            try:
-                cell = ws.cell(row=r, column=c)
-                val = cell.value
-                if val and isinstance(val, str) and "[" in val:
-                    new_val = val
-                    for key, val_rep in replacements_109.items(): 
-                        new_val = new_val.replace(key, str(val_rep))
-                    cell.value = new_val
-            except AttributeError:
-                pass
+    # 3. หยอดข้อมูลลงในแต่ละ Sheet
+    for page_idx, ws in enumerate(worksheets):
+        page_num = page_idx + 1
+        page_data = pages[page_idx]
+        
+        # 3.1 หยอดตัวแปรส่วนกลาง และ เลขหน้า
+        for r in range(1, 15):
+            for c in range(1, 40):
+                try:
+                    cell = ws.cell(row=r, column=c)
+                    val = cell.value
+                    if val and isinstance(val, str):
+                        new_val = val
+                        if "[" in new_val:
+                            for key, val_rep in replacements_109.items(): 
+                                new_val = new_val.replace(key, str(val_rep))
+                        # ค้นหาคำว่า "หน้า 1/2" หรือคล้ายๆ กัน แล้วแทนที่
+                        if "หน้า" in new_val and "/" in new_val:
+                            new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
+                        cell.value = new_val
+                except AttributeError:
+                    pass
+                    
+        # 3.2 ล้างข้อมูลตารางเก่าออกทั้งหมดก่อนเขียนใหม่
+        for r in range(8, 80, 2):
+            try: ws.cell(row=r, column=1).value = ""
+            except AttributeError: pass
+            try: ws.cell(row=r, column=2).value = ""
+            except AttributeError: pass
+            try: ws.cell(row=r+1, column=2).value = ""
+            except AttributeError: pass
+            for d in range(1, 32):
+                try: ws.cell(row=r, column=2+d).value = ""
+                except AttributeError: pass
                 
-    current_excel_row = 8
-    
-    for idx, row_data in roster_df.iterrows():
-        emp_name = str(row_data['ชื่อ-สกุล']).strip()
-        emp_pos = str(row_data['ตำแหน่งเบิก']).strip()
-        
-        try: ws.cell(row=current_excel_row, column=1).value = idx + 1
-        except AttributeError: pass
-        
-        try: ws.cell(row=current_excel_row, column=2).value = emp_name
-        except AttributeError: pass
-        
-        try: ws.cell(row=current_excel_row+1, column=2).value = emp_pos
-        except AttributeError: pass
-        
-        for d in range(1, 32):
-            shift = row_data[str(d)]
-            val = str(shift).strip() if pd.notna(shift) else ""
-            try: ws.cell(row=current_excel_row, column=2+d).value = val
+        # 3.3 หยอดรายชื่อและเวรของหน้านี้
+        current_excel_row = 8
+        for row_data in page_data:
+            list_idx = row_data['ลำดับ']
+            emp_name = str(row_data['ชื่อ-สกุล']).strip()
+            emp_pos = str(row_data['ตำแหน่งเบิก']).strip()
+            
+            try: ws.cell(row=current_excel_row, column=1).value = list_idx
             except AttributeError: pass
-                    
-        current_excel_row += 2
-        
-    while current_excel_row <= 80: 
-        try: ws.cell(row=current_excel_row, column=1).value = ""
-        except AttributeError: pass
-        try: ws.cell(row=current_excel_row, column=2).value = ""
-        except AttributeError: pass
-        try: ws.cell(row=current_excel_row+1, column=2).value = ""
-        except AttributeError: pass
-        for d in range(1, 32):
-            try: ws.cell(row=current_excel_row, column=2+d).value = ""
+            try: ws.cell(row=current_excel_row, column=2).value = emp_name
             except AttributeError: pass
-        current_excel_row += 2
-                    
-    # แก้ไขการตั้งค่าหน้ากระดาษ
-    if not ws.sheet_properties.pageSetUpPr: 
-        ws.sheet_properties.pageSetUpPr = PageSetupProperties()
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0 
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+            try: ws.cell(row=current_excel_row+1, column=2).value = emp_pos
+            except AttributeError: pass
+            
+            for d in range(1, 32):
+                shift = row_data.get(str(d), "")
+                val = str(shift).strip() if pd.notna(shift) else ""
+                try: ws.cell(row=current_excel_row, column=2+d).value = val
+                except AttributeError: pass
+                        
+            current_excel_row += 2
+            
+        # 3.4 ตั้งค่าหน้ากระดาษ
+        if not ws.sheet_properties.pageSetUpPr: 
+            ws.sheet_properties.pageSetUpPr = PageSetupProperties()
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 1 # ล็อคให้แต่ละชีตมีแค่หน้าเดียวเป๊ะๆ
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output
+    return output, total_pages
 
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ 177
@@ -419,9 +461,10 @@ tab1, tab2 = st.tabs(["📄 ส่งออก 109 (ตารางเวรร�
 with tab1:
     st.markdown("**ตารางเวร 109 ของทั้งสถานี**")
     if st.button("คลิกเพื่อสร้างไฟล์ 109", type="primary"):
-        excel_109 = generate_109(global_data, st.session_state.roster_df)
+        excel_109, total_pages = generate_109(global_data, st.session_state.roster_df)
         if excel_109:
-            st.success(f"สร้างไฟล์ 109 ประจำเดือน {global_data['val_13']} สำเร็จ!")
+            st.success(f"สร้างไฟล์ 109 ประจำเดือน {global_data['val_13']} สำเร็จ! (จัดเป็น {total_pages} หน้า)")
+            st.info("💡 **ทริคก่อนพริ้นต์:** เมื่อเปิดไฟล์ Excel ให้ไปที่ Print แล้วเลือกเป็น **Print Entire Workbook (พิมพ์ทั้งสมุดงาน)** เครื่องจะพริ้นต์ออกมาครบทุกหน้าพอดี A4 ครับ")
             st.download_button("📥 ดาวน์โหลดไฟล์ 109", data=excel_109, file_name=f"109_{global_data['val_13']}.xlsx")
 
 with tab2:
