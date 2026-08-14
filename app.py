@@ -250,10 +250,22 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
             if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
             else:
                 unique_key = f"{new_name}_{new_role}"
+                
+                # 📌 ป้องกันไม่ให้เงินเดือนและเรทเก่าโดนลบทิ้ง ถ้าผู้ใช้ไม่ได้ใส่มา
+                old_data = st.session_state.employees.get(unique_key, {})
+                old_salary = old_data.get("เงินเดือน", "-")
+                old_rate = float(old_data.get("เรท", 0.0))
+                
                 st.session_state.employees[unique_key] = {
-                    "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": "-", 
-                    "เงินเดือน": "-", "เรท": new_rate, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "Role": new_role, "is_regular": False
+                    "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, 
+                    "เลขประจำตัว": old_data.get("เลขประจำตัว", "-"), 
+                    "เงินเดือน": old_salary, 
+                    "เรท": new_rate if new_rate > 0 else old_rate, 
+                    "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
+                    "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
+                    "Role": new_role, "is_regular": old_data.get("is_regular", False)
                 }
+                
                 exists = any((r['ชื่อ-สกุล'] == new_name and r['Role (หน้าที่)'] == new_role) for _, r in st.session_state.roster_df.iterrows())
                 if not exists:
                     new_idx = len(st.session_state.roster_df) + 1
@@ -363,7 +375,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
-    # 📌 แก้ไขเรื่องการแปลค่า "เงินเดือน" ที่มีจุดทศนิยม
     raw_salary = str(emp_info.get('เงินเดือน', '-'))
     if raw_salary != "-" and raw_salary.replace('.', '', 1).isdigit():
         salary_str = f"{float(raw_salary):,.0f}"
@@ -379,7 +390,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         "[11]": ind_vars["val_11"], "[10]": ind_vars["val_10"], "[9]": ind_vars["val_9"],
         "[8]": global_vars["val_8"], "[7]": global_vars["val_7"], "[6]": ind_vars["val_6"],
         "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
-        "[3]": salary_str,  # นำเงินเดือนที่แก้ไขแล้วมาใส่
+        "[3]": salary_str,  
         "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"]
     }
     for r in range(1, 55):
@@ -397,7 +408,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         shift = str(roster_data.get(str(day), "")).strip()
         sData = shift_data.get(shift)
         if sData and sData["hours"] != "-":
-            # 📌 ระบบคณิตศาสตร์ใหม่ แยก "บาท" และ "สตางค์" อย่างแม่นยำ
             rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
             hours_val = int(sData["hours"])
             
@@ -411,7 +421,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
             ws.cell(row=row, column=2, value=sData["text"])
             ws.cell(row=row, column=3, value=hours_val)
             
-            # ใส่จำนวนเงินแยก บาท และ สตางค์ ให้ตรงช่องเป๊ะๆ
             ws.cell(row=row, column=4, value=rate_baht if rate_baht > 0 else 0)
             ws.cell(row=row, column=5, value=f"{rate_satang:02d}")
             ws.cell(row=row, column=6, value=total_baht if total_baht > 0 else 0)
