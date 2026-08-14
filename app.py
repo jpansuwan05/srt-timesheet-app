@@ -251,7 +251,6 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
             else:
                 unique_key = f"{new_name}_{new_role}"
                 
-                # 📌 ป้องกันไม่ให้เงินเดือนและเรทเก่าโดนลบทิ้ง ถ้าผู้ใช้ไม่ได้ใส่มา
                 old_data = st.session_state.employees.get(unique_key, {})
                 old_salary = old_data.get("เงินเดือน", "-")
                 old_rate = float(old_data.get("เรท", 0.0))
@@ -359,6 +358,7 @@ def generate_109(global_vars, roster_df):
             ws.cell(row=current_excel_row, column=2).value = str(row_data['ชื่อ-สกุล']).strip()
             ws.cell(row=current_excel_row+1, column=2).value = str(row_data['ตำแหน่งเบิก']).strip()
             for d in range(1, 32):
+                # 📌 ใน 109 จะพิมพ์พร้อมวงเล็บตามปกติ
                 shift = row_data.get(str(d), "")
                 ws.cell(row=current_excel_row, column=2+d).value = str(shift).strip() if pd.notna(shift) else ""
             current_excel_row += 2
@@ -405,8 +405,12 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     start_row = 7
     for day in range(1, 32):
         row = start_row + day - 1
-        shift = str(roster_data.get(str(day), "")).strip()
-        sData = shift_data.get(shift)
+        shift_raw = str(roster_data.get(str(day), "")).strip()
+        
+        # 📌 ระบบถอดวงเล็บสำหรับใบ 177 เพื่อให้เทียบรหัสได้อย่างแม่นยำ
+        shift_clean = shift_raw.replace("(", "").replace(")", "")
+        sData = shift_data.get(shift_clean)
+        
         if sData and sData["hours"] != "-":
             rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
             hours_val = int(sData["hours"])
@@ -426,7 +430,8 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
             ws.cell(row=row, column=6, value=total_baht if total_baht > 0 else 0)
             ws.cell(row=row, column=7, value=f"{total_satang:02d}")
         else:
-            val = sData["text"] if sData else (shift if shift else "-")
+            # ถ้าเป็นวันหยุด ย พ ป ฯลฯ ดึง text วันหยุดมาใส่
+            val = sData["text"] if sData else (shift_raw if shift_raw else "-")
             ws.cell(row=row, column=2, value=val)
             for col in range(3, 8): 
                 if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
@@ -502,13 +507,15 @@ def generate_report_work(unique_key, roster_data, global_vars):
     
     for day in range(1, 32):
         row = start_row + day - 1
-        shift = str(roster_data.get(str(day), "")).strip()
+        shift_raw = str(roster_data.get(str(day), "")).strip()
         
         start_time, end_time = "-", "-"
         is_holiday = False
         
-        if shift:
-            s_clean = shift.replace("(", "").replace(")", "")
+        if shift_raw:
+            # 📌 ระบบถอดวงเล็บสำหรับรายงานปฏิบัติงาน
+            s_clean = shift_raw.replace("(", "").replace(")", "")
+            
             if s_clean == "ว": start_time, end_time = "06.00", "18.00"
             elif s_clean == "ค": start_time, end_time = "00.00-06.00", "18.00-24.00"
             elif s_clean == "ว/ค": start_time, end_time = "06.00-12.00", "18.00-24.00"
@@ -520,7 +527,7 @@ def generate_report_work(unique_key, roster_data, global_vars):
                 start_time = s_clean
                 end_time = ""
                 is_holiday = True 
-            else: start_time, end_time = shift, ""
+            else: start_time, end_time = shift_raw, "" # ถ้ารหัสแปลกๆ ปล่อยผ่าน
             
         for c in range(2, 8): 
             ws.cell(row=row, column=c).value = None
