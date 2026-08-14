@@ -40,15 +40,26 @@ def load_roster_from_local():
 # 1. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย
 # ==========================================
 saved_emp_json = local_storage.getItem("srt_employees_data")
+
+# พยายามโหลดอัตโนมัติก่อน
 if saved_emp_json and 'employees' not in st.session_state:
     try:
         st.session_state.employees = json.loads(saved_emp_json)
     except:
         st.session_state.employees = None
 
+# ถ้าหลุดมาถึงตรงนี้ แสดงว่าไม่มีข้อมูล หรือ เพิ่งรีเฟรช
 if 'employees' not in st.session_state or not st.session_state.employees:
-    st.warning("🔒 **ระบบความปลอดภัย:** ไม่พบข้อมูลพนักงานในระบบ (เพื่อป้องกันข้อมูลเงินเดือนรั่วไหล เราจะไม่เก็บไฟล์นี้บนเซิร์ฟเวอร์สาธารณะ)")
-    uploaded_emp_file = st.file_uploader("📂 กรุณาอัปโหลดไฟล์ 'ข้อมูล.xlsx' จากเครื่องคอมพิวเตอร์ของคุณเพื่อเริ่มต้นทำงาน", type=["xlsx"])
+    
+    # โชว์ปุ่มกู้คืน ถ้าเจอร่องรอยข้อมูลในเบราว์เซอร์
+    if saved_emp_json:
+        st.success("✅ **ตรวจพบข้อมูลตารางเวรที่คุณทำค้างไว้ในเครื่อง!**")
+        if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary", use_container_width=True):
+            st.session_state.employees = json.loads(saved_emp_json)
+            st.rerun()
+            
+    st.warning("🔒 **ระบบความปลอดภัย:** ไม่พบข้อมูลในระบบ หรือคุณเพิ่งรีเฟรชหน้าจอ")
+    uploaded_emp_file = st.file_uploader("📂 กรุณาอัปโหลดไฟล์ 'ข้อมูล.xlsx' ใหม่เพื่อเริ่มต้น", type=["xlsx"])
     
     if uploaded_emp_file is not None:
         try:
@@ -79,7 +90,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     "Role": role, "is_regular": True 
                 }
             st.session_state.employees = emp_dict
-            # แก้ไข Error: เพิ่ม key="ls_emp_init"
             local_storage.setItem("srt_employees_data", json.dumps(emp_dict), key="ls_emp_init")
             st.success("✅ โหลดข้อมูลพนักงานสำเร็จ! กำลังเข้าสู่ระบบ...")
             st.rerun()
