@@ -6,7 +6,7 @@ import io
 import datetime
 import re
 import json
-import uuid  # <-- เพิ่มตัวสร้างรหัสสุ่ม
+import uuid
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
 
@@ -31,7 +31,6 @@ local_storage = LocalStorage()
 def save_roster_to_local(df):
     if df is not None and not df.empty:
         json_str = df.to_json(orient='records')
-        # ใช้ uuid สร้างรหัสสุ่ม เพื่อป้องกัน Error Duplicate Key
         local_storage.setItem("srt_roster_data", json_str, key=f"ls_roster_{uuid.uuid4().hex}")
 
 def load_roster_from_local():
@@ -115,7 +114,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                 p_clean = pos.replace(" ", "")
                 
                 role = pos
-                if "นสน.ตช." in p_clean: role = "นสน."
+                if "นายสถานี" in p_clean: role = "นสน."
                 elif "ช.นสน.ตช" in p_clean: role = "ช.นสน.1"
                 elif "ช.นสน.ตค" in p_clean: role = "ช.นสน.2"
                 elif "เสมียน" in p_clean: role = "เสมียน"
@@ -156,8 +155,12 @@ shift_data = {
     "(ว/ค)": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "(ค/ว)": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
     "(0-12)": {"text": "(00.00-12.00) น.", "hours": 4}, "(00-12)": {"text": "(00.00-12.00) น.", "hours": 4},
     "(12-24)": {"text": "(12.00-24.00) น.", "hours": 4},
-    "ย": {"text": "ย.", "hours": "-"}, "พ": {"text": "พ.", "hours": "-"},
-    "ป": {"text": "ป.", "hours": "-"}, "ก": {"text": "ก.", "hours": "-"},
+    "ย": {"text": "ย.", "hours": "-"}, "ย.": {"text": "ย.", "hours": "-"},
+    "พ": {"text": "พ.", "hours": "-"}, "พ.": {"text": "พ.", "hours": "-"},
+    "ป": {"text": "ป.", "hours": "-"}, "ป.": {"text": "ป.", "hours": "-"},
+    "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
+    "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
+    "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
 }
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
@@ -348,10 +351,13 @@ def generate_109(global_vars, roster_df):
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0 
         ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output
+    
+    # 📌 แก้ไขบรรทัดนี้แล้วครับ ส่งค่า output และ total_pages กลับไปทั้งคู่
+    return output, total_pages 
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars):
     emp_info = st.session_state.employees.get(unique_key)
@@ -370,7 +376,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"]
     }
     for r in range(1, 55):
-        for c in range(1, 15):
+        for c in range(1, 25): 
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
             if val and isinstance(val, str) and "[" in val:
@@ -390,7 +396,8 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
             ws.cell(row=row, column=6, value=int(sData["hours"]) * rate)
             ws.cell(row=row, column=7, value="00")
         else:
-            ws.cell(row=row, column=2, value="ย." if shift in ["ย", "ย."] else ("พ." if shift in ["พ", "พ."] else "-"))
+            val = sData["text"] if sData else (shift if shift else "-")
+            ws.cell(row=row, column=2, value=val)
             for col in range(3, 8): 
                 if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                     ws.cell(row=row, column=col, value="-")
@@ -418,11 +425,12 @@ def generate_report_work(unique_key, roster_data, global_vars):
         "[3]": f"{float(emp_info['เงินเดือน']):,.0f}" if (emp_info['เงินเดือน'] != "-" and str(emp_info['เงินเดือน']).isnumeric()) else emp_info['เงินเดือน'],
         "[14]": global_vars["val_14"],
         "[13]": global_vars["val_13"],
+        "[8]": global_vars["val_8"], 
+        "[7]": global_vars["val_7"],
     }
 
-    # แทนที่ตัวแปรในกระดาษ (ป้องกัน Error ถ้าเจอ MergedCell)
     for r in range(1, 55):
-        for c in range(1, 15):
+        for c in range(1, 25):
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
             if val and isinstance(val, str):
@@ -436,10 +444,8 @@ def generate_report_work(unique_key, roster_data, global_vars):
     if type(ws.cell(row=44, column=2)).__name__ != 'MergedCell':
         ws.cell(row=44, column=2).value = emp_info["ชื่อ-สกุล"]
 
-    # --- ส่วนจัดการเวลาและวันหยุด (ผสานเซลล์) ---
     start_row = 8
     
-    # 1. ปลดล็อก Merge Cells เดิมในส่วนของเวลาเข้า-ออกก่อน (ถ้ามี)
     ranges_to_unmerge = []
     for merged_range in ws.merged_cells.ranges:
         if start_row <= merged_range.min_row <= start_row + 31:
@@ -449,7 +455,8 @@ def generate_report_work(unique_key, roster_data, global_vars):
     for r_coord in ranges_to_unmerge:
         ws.unmerge_cells(r_coord)
 
-    # 2. หยอดข้อมูลและผสานเซลล์ใหม่ตามเงื่อนไข
+    leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
+    
     for day in range(1, 32):
         row = start_row + day - 1
         shift = str(roster_data.get(str(day), "")).strip()
@@ -466,28 +473,25 @@ def generate_report_work(unique_key, roster_data, global_vars):
             elif s_clean in ["0-12", "00-12"]: start_time, end_time = "00.00", "12.00"
             elif s_clean == "12-24": start_time, end_time = "12.00", "24.00"
             elif s_clean == "00-24": start_time, end_time = "00.00", "24.00"
-            elif s_clean in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก."]: 
+            elif s_clean in leave_types: 
                 start_time = s_clean
                 end_time = ""
-                is_holiday = True # กำหนดสถานะว่าเป็นวันหยุด
+                is_holiday = True 
             else: start_time, end_time = shift, ""
             
-        # เคลียร์เซลล์เดิมให้สะอาด
         for c in range(2, 8): ws.cell(row=row, column=c).value = None
 
         if is_holiday:
-            # ถ้าเป็นวันหยุด ให้ผสานเซลล์ตั้งแต่ คอลัมน์ 2 ถึง 7
             ws.cell(row=row, column=2).value = start_time
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=7)
             ws.cell(row=row, column=2).alignment = openpyxl.styles.Alignment(horizontal='center', vertical='center')
         else:
-            # ถ้าเป็นวันทำงานปกติ ให้แยกเวลาลงช่อง
             ws.cell(row=row, column=2).value = start_time
             ws.cell(row=row, column=5).value = end_time
 
         c_role = ws.cell(row=row, column=8)
         if type(c_role).__name__ != 'MergedCell':
-            if start_time not in ["-", "ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", ""]:
+            if start_time not in ["-", ""] and start_time not in leave_types:
                 c_role.value = emp_info["ตำแหน่ง"]
             else:
                 c_role.value = ""
