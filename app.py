@@ -7,20 +7,29 @@ import datetime
 import re
 import json
 from streamlit_local_storage import LocalStorage
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="SRT Timesheet App", layout="wide")
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
 st.markdown("---")
 
 # ==========================================
-# 0. ระบบ Local Storage (กันข้อมูลหายตอน F5)
+# 0. ระบบดักจับการรีเฟรช และ Local Storage
 # ==========================================
+components.html("""
+    <script>
+        window.parent.addEventListener('beforeunload', function (e) {
+            e.preventDefault();
+            e.returnValue = 'คุณมีข้อมูลที่ยังไม่ได้บันทึก แน่ใจหรือไม่ว่าต้องการออกจากหน้านี้?';
+        });
+    </script>
+""", height=0, width=0)
+
 local_storage = LocalStorage()
 
 def save_roster_to_local(df):
     if df is not None and not df.empty:
         json_str = df.to_json(orient='records')
-        # แก้ไข Error: เพิ่ม key="ls_roster"
         local_storage.setItem("srt_roster_data", json_str, key="ls_roster")
 
 def load_roster_from_local():
@@ -37,29 +46,63 @@ def load_roster_from_local():
     return None
 
 # ==========================================
-# 1. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย
+# 1. เมนูแถบด้านข้าง (รีเซ็ตระบบ & สำรองข้อมูล)
+# ==========================================
+st.sidebar.subheader("🔄 เริ่มต้นเดือนใหม่")
+if st.sidebar.button("🗑️ ล้างข้อมูล (เพื่ออัปโหลดรายชื่อใหม่)", type="primary"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    components.html("<script>localStorage.clear(); window.parent.location.reload();</script>", height=0)
+    st.stop()
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 จัดการข้อมูลสำรอง (ตารางเวร)")
+if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        st.session_state.roster_df.to_excel(writer, index=False, sheet_name='Roster')
+    st.sidebar.download_button(
+        label="📥 ดาวน์โหลดไฟล์สำรองตารางเวร (.xlsx)", 
+        data=buffer, 
+        file_name=f"backup_roster_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx", 
+        mime="application/vnd.ms-excel"
+    )
+
+uploaded_backup = st.sidebar.file_uploader("📤 อัปโหลดไฟล์สำรอง (.xlsx) เพื่อทำงานต่อ", type=["xlsx"])
+if uploaded_backup:
+    if st.sidebar.button("ยืนยันโหลดตารางเวรเก่า"):
+        try:
+            loaded_df = pd.read_excel(uploaded_backup)
+            for d in range(1, 32):
+                if str(d) in loaded_df.columns:
+                    loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
+            st.session_state.roster_df = loaded_df
+            save_roster_to_local(loaded_df)
+            st.sidebar.success("โหลดข้อมูลสำเร็จ! 🎉")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Error: {e}")
+
+# ==========================================
+# 2. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย
 # ==========================================
 saved_emp_json = local_storage.getItem("srt_employees_data")
 
-# พยายามโหลดอัตโนมัติก่อน
 if saved_emp_json and 'employees' not in st.session_state:
     try:
         st.session_state.employees = json.loads(saved_emp_json)
     except:
         st.session_state.employees = None
 
-# ถ้าหลุดมาถึงตรงนี้ แสดงว่าไม่มีข้อมูล หรือ เพิ่งรีเฟรช
 if 'employees' not in st.session_state or not st.session_state.employees:
-    
-    # โชว์ปุ่มกู้คืน ถ้าเจอร่องรอยข้อมูลในเบราว์เซอร์
     if saved_emp_json:
         st.success("✅ **ตรวจพบข้อมูลตารางเวรที่คุณทำค้างไว้ในเครื่อง!**")
         if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary", use_container_width=True):
             st.session_state.employees = json.loads(saved_emp_json)
             st.rerun()
             
-    st.warning("🔒 **ระบบความปลอดภัย:** ไม่พบข้อมูลในระบบ หรือคุณเพิ่งรีเฟรชหน้าจอ")
-    uploaded_emp_file = st.file_uploader("📂 กรุณาอัปโหลดไฟล์ 'ข้อมูล.xlsx' ใหม่เพื่อเริ่มต้น", type=["xlsx"])
+    st.warning("🔒 **ระบบความปลอดภัย:** ไม่พบข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์เพื่อเริ่มต้น")
+    uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์ 'ข้อมูล.xlsx' ของสถานีคุณ", type=["xlsx"])
     
     if uploaded_emp_file is not None:
         try:
@@ -70,6 +113,8 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                 if not name or name == "nan": continue
                 pos = str(row.get("ตำแหน่ง", "-")).strip()
                 p_clean = pos.replace(" ", "")
+                
+                # ระบบช่วยคัดกรอง Role อัตโนมัติ (อัปเดตให้รองรับตำแหน่งใหม่)
                 role = pos
                 if "นายสถานี" in p_clean: role = "นสน."
                 elif "ช.นสน.ตช" in p_clean: role = "ช.นสน.1"
@@ -78,6 +123,9 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                 elif "ประแจ" in p_clean: role = "ประแจ"
                 elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
                 elif "บางระมาด" in p_clean: role = "กั้นถนนฯบางระมาด"
+                elif "บริการ" in p_clean or "ลูกจ้าง" in p_clean: role = "ลูกจ้าง"
+                elif "กั้นถนน" in p_clean: role = "อื่นๆ"
+                else: role = "อื่นๆ"
                 
                 unique_key = f"{name}_{role}"
                 emp_dict[unique_key] = {
@@ -98,37 +146,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
     st.stop()
 
 # ==========================================
-# 1.5 ระบบสำรองข้อมูลตารางเวร (Backup & Restore)
-# ==========================================
-st.sidebar.subheader("💾 จัดการข้อมูลสำรอง (ตารางเวร)")
-if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        st.session_state.roster_df.to_excel(writer, index=False, sheet_name='Roster')
-    st.sidebar.download_button(
-        label="📥 ดาวน์โหลดไฟล์สำรองตารางเวร (.xlsx)", 
-        data=buffer, 
-        file_name=f"backup_roster_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx", 
-        mime="application/vnd.ms-excel"
-    )
-st.sidebar.markdown("---")
-uploaded_backup = st.sidebar.file_uploader("📤 อัปโหลดไฟล์สำรอง (.xlsx) เพื่อทำงานต่อ", type=["xlsx"])
-if uploaded_backup:
-    if st.sidebar.button("ยืนยันโหลดตารางเวรเก่า", type="primary"):
-        try:
-            loaded_df = pd.read_excel(uploaded_backup)
-            for d in range(1, 32):
-                if str(d) in loaded_df.columns:
-                    loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
-            st.session_state.roster_df = loaded_df
-            save_roster_to_local(loaded_df)
-            st.sidebar.success("โหลดข้อมูลสำเร็จ! 🎉")
-            st.rerun()
-        except Exception as e:
-            st.sidebar.error(f"Error: {e}")
-
-# ==========================================
-# 2. ข้อมูลตารางเวรตั้งต้น
+# 3. ข้อมูลตารางเวรตั้งต้น
 # ==========================================
 shift_data = {
     "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
@@ -194,7 +212,7 @@ if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.colu
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
 # ==========================================
-# 3. ตั้งค่าส่วนกลาง & ตารางเวร
+# 4. ตั้งค่าส่วนกลาง & ตารางเวร
 # ==========================================
 st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน")
 col_g1, col_g2 = st.columns(2)
@@ -213,7 +231,6 @@ with col_g2:
     val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global["val_14"])
 
 global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
-# แก้ไข Error: เพิ่ม key="ls_global"
 local_storage.setItem("srt_global_data", json.dumps(global_data), key="ls_global")
 
 st.markdown("---")
@@ -243,7 +260,6 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
                     st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
                     save_roster_to_local(st.session_state.roster_df)
-                    # แก้ไข Error: เพิ่ม key="ls_emp_add"
                     local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key="ls_emp_add")
                     st.rerun()
 
@@ -271,7 +287,7 @@ for _, row in edited_df.iterrows():
         st.session_state.employees[key]['ตำแหน่ง'] = row['ตำแหน่งเบิก']
 
 # ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ Excel เป๊ะ 100% (openpyxl)
+# 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
@@ -405,7 +421,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     return output
 
 # ==========================================
-# 5. เมนูส่งออก (Export)
+# 6. เมนูส่งออก (Export)
 # ==========================================
 st.markdown("---")
 st.subheader("🖨️ 4. ส่งออกเอกสาร Excel สำเร็จรูป")
@@ -448,7 +464,6 @@ with tab2:
         with c4:
             default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", default_ind['val_12'])
 
-        # แก้ไข Error: เพิ่ม key=f"ls_ind_{selected_key_177}"
         local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{selected_key_177}")
 
         if st.button(f"ออกใบเบิก 177 ของ {sel_name}", type="primary"):
