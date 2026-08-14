@@ -6,6 +6,7 @@ import io
 import datetime
 import re
 import json
+import uuid  # <-- เพิ่มตัวสร้างรหัสสุ่ม
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
 
@@ -30,7 +31,8 @@ local_storage = LocalStorage()
 def save_roster_to_local(df):
     if df is not None and not df.empty:
         json_str = df.to_json(orient='records')
-        local_storage.setItem("srt_roster_data", json_str, key="ls_roster")
+        # ใช้ uuid สร้างรหัสสุ่ม เพื่อป้องกัน Error Duplicate Key
+        local_storage.setItem("srt_roster_data", json_str, key=f"ls_roster_{uuid.uuid4().hex}")
 
 def load_roster_from_local():
     try:
@@ -135,7 +137,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     "Role": role, "is_regular": True 
                 }
             st.session_state.employees = emp_dict
-            local_storage.setItem("srt_employees_data", json.dumps(emp_dict), key="ls_emp_init")
+            local_storage.setItem("srt_employees_data", json.dumps(emp_dict), key=f"ls_emp_{uuid.uuid4().hex}")
             st.success("✅ โหลดข้อมูลพนักงานสำเร็จ! กำลังเข้าสู่ระบบ...")
             st.rerun()
         except Exception as e:
@@ -227,7 +229,7 @@ with col_g2:
     val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global["val_14"])
 
 global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
-local_storage.setItem("srt_global_data", json.dumps(global_data), key="ls_global")
+local_storage.setItem("srt_global_data", json.dumps(global_data), key=f"ls_global_{uuid.uuid4().hex}")
 
 st.markdown("---")
 st.subheader("🗓️ 2. จัดการตารางเวร 1-31 วัน")
@@ -256,7 +258,7 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
                     st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
                     save_roster_to_local(st.session_state.roster_df)
-                    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key="ls_emp_add")
+                    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
                     st.rerun()
 
 column_config = {
@@ -313,19 +315,21 @@ def generate_109(global_vars, roster_df):
         page_data = pages[page_idx]
         for r in range(1, 15):
             for c in range(1, 40):
-                val = ws.cell(row=r, column=c).value
+                c_cell = ws.cell(row=r, column=c)
+                val = c_cell.value
                 if val and isinstance(val, str):
                     new_val = val
                     for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
                     if "หน้า" in new_val and "/" in new_val: new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
-                    ws.cell(row=r, column=c).value = new_val
+                    if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
         for r in range(39, 55):
             for c in range(1, 40):
-                val = ws.cell(row=r, column=c).value
+                c_cell = ws.cell(row=r, column=c)
+                val = c_cell.value
                 if val and isinstance(val, str) and "[" in val:
                     new_val = val
                     for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
-                    ws.cell(row=r, column=c).value = new_val
+                    if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
         for r in range(8, 37, 2):
             ws.cell(row=r, column=1).value = ""
             ws.cell(row=r, column=2).value = ""
@@ -347,7 +351,7 @@ def generate_109(global_vars, roster_df):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output, total_pages
+    return output
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars):
     emp_info = st.session_state.employees.get(unique_key)
@@ -367,11 +371,12 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     }
     for r in range(1, 55):
         for c in range(1, 15):
-            val = ws.cell(row=r, column=c).value
+            c_cell = ws.cell(row=r, column=c)
+            val = c_cell.value
             if val and isinstance(val, str) and "[" in val:
                 new_val = val
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
-                ws.cell(row=r, column=c).value = new_val
+                if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
     start_row = 7
     for day in range(1, 32):
         row = start_row + day - 1
@@ -386,7 +391,9 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
             ws.cell(row=row, column=7, value="00")
         else:
             ws.cell(row=row, column=2, value="ย." if shift in ["ย", "ย."] else ("พ." if shift in ["พ", "พ."] else "-"))
-            for col in range(3, 8): ws.cell(row=row, column=col, value="-")
+            for col in range(3, 8): 
+                if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
+                    ws.cell(row=row, column=col, value="-")
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToHeight = 1; ws.page_setup.fitToWidth = 1
@@ -413,47 +420,77 @@ def generate_report_work(unique_key, roster_data, global_vars):
         "[13]": global_vars["val_13"],
     }
 
-    # แทนที่ตัวแปรในกระดาษ
+    # แทนที่ตัวแปรในกระดาษ (ป้องกัน Error ถ้าเจอ MergedCell)
     for r in range(1, 55):
         for c in range(1, 15):
-            val = ws.cell(row=r, column=c).value
+            c_cell = ws.cell(row=r, column=c)
+            val = c_cell.value
             if val and isinstance(val, str):
                 new_val = val
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
-                ws.cell(row=r, column=c).value = new_val
+                if type(c_cell).__name__ != 'MergedCell': 
+                    c_cell.value = new_val
 
-    # แทนที่เดือน และ ชื่อลายเซ็นต์ที่อาจถูกพิมพ์ค้างไว้ใน Template
-    ws.cell(row=2, column=7).value = global_vars["val_13"]
-    ws.cell(row=44, column=2).value = emp_info["ชื่อ-สกุล"]
+    if type(ws.cell(row=2, column=7)).__name__ != 'MergedCell':
+        ws.cell(row=2, column=7).value = global_vars["val_13"]
+    if type(ws.cell(row=44, column=2)).__name__ != 'MergedCell':
+        ws.cell(row=44, column=2).value = emp_info["ชื่อ-สกุล"]
 
-    # หยอดเวลาเข้า-ออกงาน
+    # --- ส่วนจัดการเวลาและวันหยุด (ผสานเซลล์) ---
     start_row = 8
+    
+    # 1. ปลดล็อก Merge Cells เดิมในส่วนของเวลาเข้า-ออกก่อน (ถ้ามี)
+    ranges_to_unmerge = []
+    for merged_range in ws.merged_cells.ranges:
+        if start_row <= merged_range.min_row <= start_row + 31:
+            if merged_range.min_col <= 7 and merged_range.max_col >= 2:
+                ranges_to_unmerge.append(merged_range.coord)
+    
+    for r_coord in ranges_to_unmerge:
+        ws.unmerge_cells(r_coord)
+
+    # 2. หยอดข้อมูลและผสานเซลล์ใหม่ตามเงื่อนไข
     for day in range(1, 32):
         row = start_row + day - 1
         shift = str(roster_data.get(str(day), "")).strip()
         
         start_time, end_time = "-", "-"
+        is_holiday = False
+        
         if shift:
             s_clean = shift.replace("(", "").replace(")", "")
             if s_clean == "ว": start_time, end_time = "06.00", "18.00"
-            elif s_clean == "ค": start_time, end_time = "00.00 - 06.00", "18.00 - 24.00"
-            elif s_clean == "ว/ค": start_time, end_time = "06.00 - 12.00", "18.00 - 24.00"
-            elif s_clean == "ค/ว": start_time, end_time = "00.00 - 06.00", "12.00 - 18.00"
+            elif s_clean == "ค": start_time, end_time = "00.00-06.00", "18.00-24.00"
+            elif s_clean == "ว/ค": start_time, end_time = "06.00-12.00", "18.00-24.00"
+            elif s_clean == "ค/ว": start_time, end_time = "00.00-06.00", "12.00-18.00"
             elif s_clean in ["0-12", "00-12"]: start_time, end_time = "00.00", "12.00"
             elif s_clean == "12-24": start_time, end_time = "12.00", "24.00"
             elif s_clean == "00-24": start_time, end_time = "00.00", "24.00"
-            elif s_clean in ["ย", "ย."]: start_time, end_time = "ย.", ""
-            elif s_clean in ["พ", "พ."]: start_time, end_time = "พ.", ""
-            elif s_clean in ["ป", "ป."]: start_time, end_time = "ป.", ""
-            elif s_clean in ["ก", "ก."]: start_time, end_time = "ก.", ""
+            elif s_clean in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก."]: 
+                start_time = s_clean
+                end_time = ""
+                is_holiday = True # กำหนดสถานะว่าเป็นวันหยุด
             else: start_time, end_time = shift, ""
             
-        ws.cell(row=row, column=2).value = start_time
-        ws.cell(row=row, column=5).value = end_time
-        if start_time not in ["-", "ย.", "พ.", "ป.", "ก.", ""]:
-            ws.cell(row=row, column=8).value = emp_info["ตำแหน่ง"]
+        # เคลียร์เซลล์เดิมให้สะอาด
+        for c in range(2, 8): ws.cell(row=row, column=c).value = None
+
+        if is_holiday:
+            # ถ้าเป็นวันหยุด ให้ผสานเซลล์ตั้งแต่ คอลัมน์ 2 ถึง 7
+            ws.cell(row=row, column=2).value = start_time
+            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=7)
+            ws.cell(row=row, column=2).alignment = openpyxl.styles.Alignment(horizontal='center', vertical='center')
         else:
-            ws.cell(row=row, column=8).value = ""
+            # ถ้าเป็นวันทำงานปกติ ให้แยกเวลาลงช่อง
+            ws.cell(row=row, column=2).value = start_time
+            ws.cell(row=row, column=5).value = end_time
+
+        c_role = ws.cell(row=row, column=8)
+        if type(c_role).__name__ != 'MergedCell':
+            if start_time not in ["-", "ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", ""]:
+                c_role.value = emp_info["ตำแหน่ง"]
+            else:
+                c_role.value = ""
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -509,11 +546,9 @@ with tab2:
         with c4:
             default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", default_ind['val_12'])
 
-        local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{selected_key_177}")
+        local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{uuid.uuid4().hex}")
 
         st.markdown("---")
-        
-        # แสดงปุ่มกด 2 อันคู่กัน
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
