@@ -250,13 +250,11 @@ with st.container(border=True):
         val_8 = st.text_input("วันที่ลงคำสั่ง [8]", default_global.get("val_8", ""))
         val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global.get("val_14", ""))
 
-    # รีคำนวณวันหลังมีการเปลี่ยนเดือน/ปี
     month_idx = months_list.index(val_13) + 1
     year_ce = year_be - 543
     first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    # 📌 ระบบมาร์คปฏิทิน วันหยุดนักขัตฤกษ์
     public_holidays = st.multiselect(
         "🎉 เลือกวันที่เป็น 'วันหยุดนักขัตฤกษ์' ประจำเดือน (สำหรับใบ 178)", 
         list(range(1, num_days + 1)),
@@ -558,8 +556,8 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-# 📌 178 ฟังก์ชันใหม่เอี่ยมสำหรับเบิกวันหยุด!
-def generate_178(unique_key, roster_data, global_vars, num_days):
+# 📌 อัปเดต 178 ให้จัดการตัวแปร [4] [5] [6] และคำนวณวันรวมอย่างถูกต้อง
+def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
@@ -573,23 +571,36 @@ def generate_178(unique_key, roster_data, global_vars, num_days):
     except: return None
     ws = wb.active
     
+    # 📌 คำนวณยอดรวมของ [4] และ [5] เพื่อนำไปแทนที่ในคำว่า "รวม 08 วัน"
+    total_45 = 0
+    try: total_45 += int(ind_vars.get('val_4', 0))
+    except: pass
+    try: total_45 += int(ind_vars.get('val_5', 0))
+    except: pass
+    
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], "[7]": global_vars["val_7"],
+        "[12]": ind_vars["val_12"], "[11]": ind_vars["val_11"], "[10]": ind_vars["val_10"], "[9]": ind_vars["val_9"],
+        "[6]": ind_vars["val_6"], "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
         "[3]": salary_str,  
-        "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"]
+        "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"],
+        "รวม 08 วัน": f"รวม {total_45:02d} วัน", # 📌 เปลี่ยนเลข 08 เป็นผลรวม [4]+[5] อัตโนมัติ
+        "รวม 8 วัน": f"รวม {total_45:02d} วัน"
     }
+    
     for r in range(1, 55):
         for c in range(1, 40): 
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
-            if val and isinstance(val, str) and "[" in val:
+            if val and isinstance(val, str):
                 new_val = val
-                for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
+                for k, v in replacements.items(): 
+                    if k in new_val:
+                        new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
 
-    # ลงค่าเรทรายวัน (L5) และ รายชั่วโมง (L3)
     rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
     daily_rate = rate_val * 8
     
@@ -605,7 +616,7 @@ def generate_178(unique_key, roster_data, global_vars, num_days):
         row = start_row + day
         ws.cell(row=row, column=1).value = str(day) 
         
-        for col in range(2, 10):
+        for col in range(2, 11):
             if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                 ws.cell(row=row, column=col).value = None
 
@@ -637,6 +648,7 @@ def generate_178(unique_key, roster_data, global_vars, num_days):
                 if t2_start: ws.cell(row=row, column=6).value = t2_start
                 if t2_end: ws.cell(row=row, column=7).value = t2_end
                 ws.cell(row=row, column=8).value = 1 
+                ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
                     ws.cell(row=row, column=2).value = "(วันหยุดนักขัตฤกษ์)"
@@ -645,9 +657,11 @@ def generate_178(unique_key, roster_data, global_vars, num_days):
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
                     weekly_holiday_count += 1
                     
-    # เขียนยอดสรุปให้เด้งไปเข้าสูตรคำนวณเงินอัตโนมัติ
     ws.cell(row=39, column=8).value = weekly_holiday_count
     ws.cell(row=40, column=8).value = public_holiday_count
+    
+    if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
+        ws.cell(row=42, column=8).value = weekly_holiday_count + public_holiday_count
     
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -853,7 +867,7 @@ with st.container(border=True):
                     emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
                     roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
                     
-                    excel_178 = generate_178(selected_key_177, roster_dict, global_data, num_days)
+                    excel_178 = generate_178(selected_key_177, roster_dict, global_data, default_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 178", data=excel_178, file_name=f"178_{sel_name}.xlsx", use_container_width=True)
