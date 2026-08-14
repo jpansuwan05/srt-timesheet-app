@@ -20,7 +20,8 @@ local_storage = LocalStorage()
 def save_roster_to_local(df):
     if df is not None and not df.empty:
         json_str = df.to_json(orient='records')
-        local_storage.setItem("srt_roster_data", json_str)
+        # แก้ไข Error: เพิ่ม key="ls_roster"
+        local_storage.setItem("srt_roster_data", json_str, key="ls_roster")
 
 def load_roster_from_local():
     try:
@@ -36,9 +37,8 @@ def load_roster_from_local():
     return None
 
 # ==========================================
-# 1. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย (Zero-Data Retention)
+# 1. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย
 # ==========================================
-# พยายามโหลดจาก Local Storage ก่อนเผื่อเคยกด F5
 saved_emp_json = local_storage.getItem("srt_employees_data")
 if saved_emp_json and 'employees' not in st.session_state:
     try:
@@ -46,7 +46,6 @@ if saved_emp_json and 'employees' not in st.session_state:
     except:
         st.session_state.employees = None
 
-# ถ้ายืนยันแล้วว่าไม่มีข้อมูลในระบบ ให้บังคับอัปโหลด
 if 'employees' not in st.session_state or not st.session_state.employees:
     st.warning("🔒 **ระบบความปลอดภัย:** ไม่พบข้อมูลพนักงานในระบบ (เพื่อป้องกันข้อมูลเงินเดือนรั่วไหล เราจะไม่เก็บไฟล์นี้บนเซิร์ฟเวอร์สาธารณะ)")
     uploaded_emp_file = st.file_uploader("📂 กรุณาอัปโหลดไฟล์ 'ข้อมูล.xlsx' จากเครื่องคอมพิวเตอร์ของคุณเพื่อเริ่มต้นทำงาน", type=["xlsx"])
@@ -80,12 +79,13 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     "Role": role, "is_regular": True 
                 }
             st.session_state.employees = emp_dict
-            local_storage.setItem("srt_employees_data", json.dumps(emp_dict))
+            # แก้ไข Error: เพิ่ม key="ls_emp_init"
+            local_storage.setItem("srt_employees_data", json.dumps(emp_dict), key="ls_emp_init")
             st.success("✅ โหลดข้อมูลพนักงานสำเร็จ! กำลังเข้าสู่ระบบ...")
             st.rerun()
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
-    st.stop() # หยุดการทำงานตรงนี้จนกว่าจะอัปโหลดไฟล์เสร็จ
+    st.stop()
 
 # ==========================================
 # 1.5 ระบบสำรองข้อมูลตารางเวร (Backup & Restore)
@@ -156,7 +156,6 @@ def sort_roster_by_role(df, emp_dict):
     temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
     return temp_df.drop(columns=['sort_key'])
 
-# โหลดตารางจาก Local Storage
 if 'roster_df' not in st.session_state:
     saved_df = load_roster_from_local()
     if saved_df is not None:
@@ -204,7 +203,8 @@ with col_g2:
     val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global["val_14"])
 
 global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
-local_storage.setItem("srt_global_data", json.dumps(global_data))
+# แก้ไข Error: เพิ่ม key="ls_global"
+local_storage.setItem("srt_global_data", json.dumps(global_data), key="ls_global")
 
 st.markdown("---")
 st.subheader("🗓️ 2. จัดการตารางเวร 1-31 วัน")
@@ -233,7 +233,8 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
                     st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
                     save_roster_to_local(st.session_state.roster_df)
-                    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees))
+                    # แก้ไข Error: เพิ่ม key="ls_emp_add"
+                    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key="ls_emp_add")
                     st.rerun()
 
 column_config = {
@@ -291,7 +292,6 @@ def generate_109(global_vars, roster_df):
         page_num = page_idx + 1
         page_data = pages[page_idx]
         
-        # หยอดตัวแปรส่วนหัว
         for r in range(1, 15):
             for c in range(1, 40):
                 val = ws.cell(row=r, column=c).value
@@ -303,7 +303,6 @@ def generate_109(global_vars, roster_df):
                         new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
                     ws.cell(row=r, column=c).value = new_val
                     
-        # หยอดตัวแปรส่วนล่าง (หมายเหตุ)
         for r in range(39, 55):
             for c in range(1, 40):
                 val = ws.cell(row=r, column=c).value
@@ -312,14 +311,12 @@ def generate_109(global_vars, roster_df):
                     for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
                     ws.cell(row=r, column=c).value = new_val
                     
-        # ล้างข้อมูลแถว 8-36 (คงเหลือความสูงแถวและเส้นขอบเดิมไว้)
         for r in range(8, 37, 2):
             ws.cell(row=r, column=1).value = ""
             ws.cell(row=r, column=2).value = ""
             ws.cell(row=r+1, column=2).value = ""
             for d in range(1, 32): ws.cell(row=r, column=2+d).value = ""
                 
-        # หยอดรายชื่อ 15 คน
         current_excel_row = 8
         for row_data in page_data:
             ws.cell(row=current_excel_row, column=1).value = row_data['ลำดับ']
@@ -330,7 +327,6 @@ def generate_109(global_vars, roster_df):
                 ws.cell(row=current_excel_row, column=2+d).value = str(shift).strip() if pd.notna(shift) else ""
             current_excel_row += 2
             
-        # ล็อกหน้ากระดาษให้เป็น 1 แผ่นกว้างพอดี
         if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1
@@ -442,7 +438,8 @@ with tab2:
         with c4:
             default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", default_ind['val_12'])
 
-        local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind))
+        # แก้ไข Error: เพิ่ม key=f"ls_ind_{selected_key_177}"
+        local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{selected_key_177}")
 
         if st.button(f"ออกใบเบิก 177 ของ {sel_name}", type="primary"):
             emp_row = st.session_state.roster_df[
