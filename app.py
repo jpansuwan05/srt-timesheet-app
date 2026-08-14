@@ -279,12 +279,16 @@ if not edited_df.equals(st.session_state.roster_df):
     save_roster_to_local(edited_df)
 
 for _, row in edited_df.iterrows():
-    name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
+    # เปลี่ยนมาใช้ .get() เพื่อป้องกันระบบล่มเวลาหาคอลัมน์ไม่เจอ
+    name = str(row.get('ชื่อ-สกุล', '')).strip()
+    role = str(row.get('Role (หน้าที่)', '')).strip()
+    if not name: continue
+    
     key = f"{name}_{role}"
     if key in st.session_state.employees:
         st.session_state.employees[key]['Role'] = role
         st.session_state.employees[key]['ชื่อ-สกุล'] = name
-        st.session_state.employees[key]['ตำแหน่ง'] = row['ตำแหน่งเบิก']
+        st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
 
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ Excel
