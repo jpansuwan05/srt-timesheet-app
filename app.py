@@ -5,85 +5,121 @@ from openpyxl.worksheet.properties import PageSetupProperties
 import io
 import datetime
 import re
+import json
+from streamlit_local_storage import LocalStorage
 
 st.set_page_config(page_title="SRT Timesheet App", layout="wide")
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
+st.markdown("---")
 
 # ==========================================
-# 0. ระบบสำรองข้อมูล (Backup & Restore)
+# 0. ระบบ Local Storage (กันข้อมูลหายตอน F5)
 # ==========================================
-st.sidebar.subheader("💾 จัดการข้อมูลสำรอง")
-st.sidebar.markdown("ดาวน์โหลดตารางปัจจุบันเก็บไว้ เพื่อนำมาโหลดทำงานต่อในวันหลังได้")
+local_storage = LocalStorage()
 
-# ปุ่มดาวน์โหลดไฟล์สำรอง
-if 'roster_df' in st.session_state:
+def save_roster_to_local(df):
+    if df is not None and not df.empty:
+        json_str = df.to_json(orient='records')
+        local_storage.setItem("srt_roster_data", json_str)
+
+def load_roster_from_local():
+    try:
+        json_str = local_storage.getItem("srt_roster_data")
+        if json_str:
+            loaded_df = pd.read_json(io.StringIO(json_str), orient='records')
+            for d in range(1, 32):
+                if str(d) in loaded_df.columns:
+                    loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
+            return loaded_df
+    except:
+        return None
+    return None
+
+# ==========================================
+# 1. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย (Zero-Data Retention)
+# ==========================================
+# พยายามโหลดจาก Local Storage ก่อนเผื่อเคยกด F5
+saved_emp_json = local_storage.getItem("srt_employees_data")
+if saved_emp_json and 'employees' not in st.session_state:
+    try:
+        st.session_state.employees = json.loads(saved_emp_json)
+    except:
+        st.session_state.employees = None
+
+# ถ้ายืนยันแล้วว่าไม่มีข้อมูลในระบบ ให้บังคับอัปโหลด
+if 'employees' not in st.session_state or not st.session_state.employees:
+    st.warning("🔒 **ระบบความปลอดภัย:** ไม่พบข้อมูลพนักงานในระบบ (เพื่อป้องกันข้อมูลเงินเดือนรั่วไหล เราจะไม่เก็บไฟล์นี้บนเซิร์ฟเวอร์สาธารณะ)")
+    uploaded_emp_file = st.file_uploader("📂 กรุณาอัปโหลดไฟล์ 'ข้อมูล.xlsx' จากเครื่องคอมพิวเตอร์ของคุณเพื่อเริ่มต้นทำงาน", type=["xlsx"])
+    
+    if uploaded_emp_file is not None:
+        try:
+            df_emp = pd.read_excel(uploaded_emp_file)
+            emp_dict = {}
+            for _, row in df_emp.iterrows():
+                name = str(row.get("รายชื่อ", "")).strip()
+                if not name or name == "nan": continue
+                pos = str(row.get("ตำแหน่ง", "-")).strip()
+                p_clean = pos.replace(" ", "")
+                role = pos
+                if "นายสถานี" in p_clean: role = "นสน."
+                elif "ช.นสน.ตช" in p_clean: role = "ช.นสน.1"
+                elif "ช.นสน.ตค" in p_clean: role = "ช.นสน.2"
+                elif "เสมียน" in p_clean: role = "เสมียน"
+                elif "ประแจ" in p_clean: role = "ประแจ"
+                elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
+                elif "บางระมาด" in p_clean: role = "กั้นถนนฯบางระมาด"
+                
+                unique_key = f"{name}_{role}"
+                emp_dict[unique_key] = {
+                    "ชื่อ-สกุล": name, "ตำแหน่ง": pos, 
+                    "เลขประจำตัว": str(row.get("เลขประจำตัว", "-")) if pd.notna(row.get("เลขประจำตัว")) else "-",
+                    "เงินเดือน": str(row.get("เงินเดือน", "-")) if pd.notna(row.get("เงินเดือน")) else "-", 
+                    "เรท": float(row.get("เรท 1 ชั่วโมง", 0)) if pd.notna(row.get("เรท 1 ชั่วโมง")) else 0.0,
+                    "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
+                    "รหัสบัญชี": str(row.get("รหัสบัญชี", "-")) if pd.notna(row.get("รหัสบัญชี")) else "-",
+                    "Role": role, "is_regular": True 
+                }
+            st.session_state.employees = emp_dict
+            local_storage.setItem("srt_employees_data", json.dumps(emp_dict))
+            st.success("✅ โหลดข้อมูลพนักงานสำเร็จ! กำลังเข้าสู่ระบบ...")
+            st.rerun()
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
+    st.stop() # หยุดการทำงานตรงนี้จนกว่าจะอัปโหลดไฟล์เสร็จ
+
+# ==========================================
+# 1.5 ระบบสำรองข้อมูลตารางเวร (Backup & Restore)
+# ==========================================
+st.sidebar.subheader("💾 จัดการข้อมูลสำรอง (ตารางเวร)")
+if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         st.session_state.roster_df.to_excel(writer, index=False, sheet_name='Roster')
     st.sidebar.download_button(
-        label="📥 ดาวน์โหลดข้อมูลตารางเวร (.xlsx)", 
+        label="📥 ดาวน์โหลดไฟล์สำรองตารางเวร (.xlsx)", 
         data=buffer, 
         file_name=f"backup_roster_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx", 
         mime="application/vnd.ms-excel"
     )
-
 st.sidebar.markdown("---")
-# ปุ่มอัปโหลดไฟล์สำรอง
-uploaded_file = st.sidebar.file_uploader("📤 อัปโหลดไฟล์สำรอง (.xlsx) เพื่อทำงานต่อ", type=["xlsx"])
-if uploaded_file:
-    if st.sidebar.button("ยืนยันโหลดข้อมูล", type="primary"):
+uploaded_backup = st.sidebar.file_uploader("📤 อัปโหลดไฟล์สำรอง (.xlsx) เพื่อทำงานต่อ", type=["xlsx"])
+if uploaded_backup:
+    if st.sidebar.button("ยืนยันโหลดตารางเวรเก่า", type="primary"):
         try:
-            loaded_df = pd.read_excel(uploaded_file)
-            # แปลงข้อมูลวันที่ (คอลัมน์ 1-31) ให้เป็น String ป้องกัน Error
+            loaded_df = pd.read_excel(uploaded_backup)
             for d in range(1, 32):
                 if str(d) in loaded_df.columns:
                     loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
             st.session_state.roster_df = loaded_df
+            save_roster_to_local(loaded_df)
             st.sidebar.success("โหลดข้อมูลสำเร็จ! 🎉")
             st.rerun()
         except Exception as e:
-            st.sidebar.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
-
-st.markdown("---")
+            st.sidebar.error(f"Error: {e}")
 
 # ==========================================
-# 1. โหลดข้อมูลพนักงาน
+# 2. ข้อมูลตารางเวรตั้งต้น
 # ==========================================
-@st.cache_data
-def load_employee_data():
-    try:
-        df = pd.read_excel("ข้อมูล.xlsx")
-        emp_dict = {}
-        for _, row in df.iterrows():
-            name, pos = str(row["รายชื่อ"]).strip(), str(row["ตำแหน่ง"]).strip()
-            p_clean = pos.replace(" ", "")
-            role = pos
-            if "นายสถานี" in p_clean: role = "นสน."
-            elif "ช.นสน.ตช" in p_clean: role = "ช.นสน.1"
-            elif "ช.นสน.ตค" in p_clean: role = "ช.นสน.2"
-            elif "เสมียน" in p_clean: role = "เสมียน"
-            elif "ประแจ" in p_clean: role = "ประแจ"
-            elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
-            elif "บางระมาด" in p_clean: role = "กั้นถนนฯบางระมาด"
-            unique_key = f"{name}_{role}"
-            emp_dict[unique_key] = {
-                "ชื่อ-สกุล": name, "ตำแหน่ง": pos, "เลขประจำตัว": str(row["เลขประจำตัว"]) if pd.notna(row["เลขประจำตัว"]) else "-",
-                "เงินเดือน": str(row["เงินเดือน"]) if pd.notna(row["เงินเดือน"]) else "-", 
-                "เรท": float(row["เรท 1 ชั่วโมง"]) if pd.notna(row["เรท 1 ชั่วโมง"]) else 0,
-                "ประเภทบัญชี": str(row["ประเภทบัญชี"]) if pd.notna(row["ประเภทบัญชี"]) else "-", 
-                "รหัสบัญชี": str(row["รหัสบัญชี"]) if pd.notna(row["รหัสบัญชี"]) else "-",
-                "Role": role, "is_regular": True 
-            }
-        return emp_dict
-    except: return None
-
-if 'employees' not in st.session_state:
-    loaded_data = load_employee_data()
-    if not loaded_data:
-        st.error("❌ ไม่พบไฟล์ 'ข้อมูล.xlsx' กรุณาอัปโหลดไว้ในโฟลเดอร์เดียวกับโค้ดครับ")
-        st.stop()
-    st.session_state.employees = loaded_data
-
 shift_data = {
     "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
     "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
@@ -120,63 +156,75 @@ def sort_roster_by_role(df, emp_dict):
     temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
     return temp_df.drop(columns=['sort_key'])
 
-# ==========================================
-# 2. ข้อมูลส่วนกลาง
-# ==========================================
-st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน")
-col_g1, col_g2 = st.columns(2)
-with col_g1:
-    val_13 = st.text_input("เดือนตัวเต็ม [13]", "สิงหาคม")
-    val_7 = st.text_input("คำสั่งแขวง [7]", "5110/2520/2569")
-with col_g2:
-    val_8 = st.text_input("วันที่ลงคำสั่ง [8]", "29 พ.ค. 69")
-    val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", "01 ก.ค. 69")
-
-global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
-
-# ==========================================
-# 3. ตารางเวร 109 & เพิ่มพนักงานใหม่
-# ==========================================
-st.markdown("---")
-st.subheader("🗓️ 2. จัดการตารางเวร 1-31 วัน (ตารางหลัก)")
-
+# โหลดตารางจาก Local Storage
 if 'roster_df' not in st.session_state:
-    data = []
-    for i, (key, info) in enumerate(st.session_state.employees.items()):
-        row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
-        for d in range(1, 32): row[str(d)] = ""
-        data.append(row)
-    df = pd.DataFrame(data)
-    for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
-    st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
+    saved_df = load_roster_from_local()
+    if saved_df is not None:
+        st.session_state.roster_df = saved_df
+        for _, row in saved_df.iterrows():
+            name = str(row['ชื่อ-สกุล']).strip()
+            role = str(row['Role (หน้าที่)']).strip()
+            unique_key = f"{name}_{role}"
+            if unique_key not in st.session_state.employees:
+                 st.session_state.employees[unique_key] = {
+                        "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
+                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "Role": role, "is_regular": False
+                 }
+    else:
+        data = []
+        for i, (key, info) in enumerate(st.session_state.employees.items()):
+            row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
+            for d in range(1, 32): row[str(d)] = ""
+            data.append(row)
+        df = pd.DataFrame(data)
+        for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
+        st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
+        save_roster_to_local(st.session_state.roster_df)
 
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
-with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (เสียบชื่อต่อจากคนประจำอัตโนมัติ)"):
+# ==========================================
+# 3. ตั้งค่าส่วนกลาง & ตารางเวร
+# ==========================================
+st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน")
+col_g1, col_g2 = st.columns(2)
+
+saved_global = local_storage.getItem("srt_global_data")
+default_global = {"val_13": "สิงหาคม", "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69"}
+try:
+    if saved_global: default_global.update(json.loads(saved_global))
+except: pass
+
+with col_g1:
+    val_13 = st.text_input("เดือนตัวเต็ม [13]", default_global["val_13"])
+    val_7 = st.text_input("คำสั่งแขวง [7]", default_global["val_7"])
+with col_g2:
+    val_8 = st.text_input("วันที่ลงคำสั่ง [8]", default_global["val_8"])
+    val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global["val_14"])
+
+global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
+local_storage.setItem("srt_global_data", json.dumps(global_data))
+
+st.markdown("---")
+st.subheader("🗓️ 2. จัดการตารางเวร 1-31 วัน")
+
+with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน"):
     with st.form("add_emp_form"):
         c1, c2, c3, c4 = st.columns(4)
         new_name = c1.text_input("ชื่อ-สกุล*")
-        new_pos = c2.text_input("ตำแหน่งที่ใช้เบิก*")
-        new_id = c3.text_input("เลขประจำตัว", "-")
-        new_role = c4.selectbox("Role (หน้าที่เข้าเวร)", roles_list)
+        new_pos = c2.text_input("ตำแหน่งเบิก*")
+        new_role = c3.selectbox("Role (หน้าที่)", roles_list)
+        new_rate = c4.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
         
-        c5, c6, c7, c8 = st.columns(4)
-        new_salary = c5.text_input("เงินเดือน", "-")
-        new_rate = c6.number_input("เรท 1 ชั่วโมง (บาท)", min_value=0.0, value=0.0, step=1.0)
-        new_acctype = c7.text_input("ประเภทบัญชี", "-")
-        new_acccode = c8.text_input("รหัสบัญชี", "-")
-        
-        if st.form_submit_button("เพิ่มลงตารางเวร"):
-            if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ-สกุล และ ตำแหน่งที่ใช้เบิก!")
+        if st.form_submit_button("เพิ่มพนักงาน"):
+            if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
             else:
                 unique_key = f"{new_name}_{new_role}"
-                if unique_key in st.session_state.employees: st.error(f"มีรายชื่อ '{new_name}' ใน Role '{new_role}' อยู่ในระบบแล้ว")
-                else:
+                if unique_key not in st.session_state.employees:
                     st.session_state.employees[unique_key] = {
-                        "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": new_id, 
-                        "เงินเดือน": new_salary, "เรท": new_rate, "ประเภทบัญชี": new_acctype, 
-                        "รหัสบัญชี": new_acccode, "Role": new_role, "is_regular": False
+                        "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": "-", 
+                        "เงินเดือน": "-", "เรท": new_rate, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "Role": new_role, "is_regular": False
                     }
                     new_idx = len(st.session_state.roster_df) + 1
                     new_row = {"ขึ้นหน้าใหม่": False, "ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
@@ -184,44 +232,24 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
                     new_df = pd.DataFrame([new_row])
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
                     st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
-                    st.success(f"เพิ่ม '{new_name}' เรียบร้อย! ระบบจัดเรียงให้อยู่หมวดหมู่ {new_role} แล้ว")
-                    st.rerun()
-
-with st.expander("⚡ เครื่องมือช่วยกรอกเวรแบบด่วน (เติมรหัสเวรหลายวันรวดเดียว)"):
-    with st.form("bulk_fill_form"):
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-        emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
-        target_emp = c1.selectbox("1. เลือกพนักงาน", emp_options)
-        target_shift = c2.text_input("2. กรอกรหัสเวร (เช่น ว, ค, ย)")
-        start_day = c3.number_input("3. ใส่วันที่เริ่มต้น", min_value=1, max_value=31, value=1)
-        end_day = c4.number_input("4. ใส่วันที่สิ้นสุด", min_value=1, max_value=31, value=31)
-        
-        if st.form_submit_button("เติมข้อมูลเวรทันที!"):
-            if target_shift.strip() == "": st.warning("กรุณากรอกรหัสเวรก่อนครับ")
-            elif start_day > end_day: st.warning("วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุด")
-            else:
-                raw_name = target_emp.split(" (")[0]
-                raw_role = target_emp.split(" (")[1].replace(")", "")
-                match_idx = st.session_state.roster_df[
-                    (st.session_state.roster_df['ชื่อ-สกุล'] == raw_name) & 
-                    (st.session_state.roster_df['Role (หน้าที่)'] == raw_role)
-                ].index
-                if not match_idx.empty:
-                    for d in range(start_day, end_day + 1): st.session_state.roster_df.at[match_idx[0], str(d)] = target_shift.strip()
-                    st.success(f"เติมเวรสำเร็จ!")
+                    save_roster_to_local(st.session_state.roster_df)
+                    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees))
                     st.rerun()
 
 column_config = {
-    "ขึ้นหน้าใหม่": st.column_config.CheckboxColumn("ขึ้นหน้าใหม่", help="ติ๊กถูกหากต้องการให้ชื่อนี้เป็นคนแรกของหน้าถัดไป", width="small", default=False),
+    "ขึ้นหน้าใหม่": st.column_config.CheckboxColumn("ขึ้นหน้าใหม่", width="small"),
     "ลำดับ": st.column_config.NumberColumn("ลำดับ", width="small", disabled=True),
     "ชื่อ-สกุล": st.column_config.TextColumn("ชื่อ-สกุล", width="medium"), 
     "ตำแหน่งเบิก": st.column_config.TextColumn("ตำแหน่งเบิก", width="medium"), 
-    "Role (หน้าที่)": st.column_config.SelectboxColumn("Role (หน้าที่)", options=roles_list, width="small")
+    "Role (หน้าที่)": st.column_config.SelectboxColumn("Role", options=roles_list, width="small")
 }
 for d in range(1, 32): column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
 
 edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
-st.session_state.roster_df = edited_df
+
+if not edited_df.equals(st.session_state.roster_df):
+    st.session_state.roster_df = edited_df
+    save_roster_to_local(edited_df)
 
 for _, row in edited_df.iterrows():
     name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
@@ -232,65 +260,7 @@ for _, row in edited_df.iterrows():
         st.session_state.employees[key]['ตำแหน่ง'] = row['ตำแหน่งเบิก']
 
 # ==========================================
-# 3.5 ระบบตรวจสอบเงื่อนไข (Validation)
-# ==========================================
-def get_shift_hours(shift_str):
-    if not shift_str: return set()
-    shift = str(shift_str).strip().replace('(', '').replace(')', '')
-    mapping = {
-        'ว': set(range(6, 18)), 'ค': set(range(0, 6)) | set(range(18, 24)),
-        'ว/ค': set(range(6, 12)) | set(range(18, 24)), 'ค/ว': set(range(0, 6)) | set(range(12, 18)),
-        '0-12': set(range(0, 12)), '00-12': set(range(0, 12)),
-        '12-24': set(range(12, 24)), '00-24': set(range(0, 24))
-    }
-    return mapping.get(shift, set())
-
-def validate_roster(roster_df):
-    errors = []
-    for d in range(1, 32):
-        day, role_hours, nai_satanee_off, nai_satanee_shift = str(d), {}, False, ""
-        for _, row in roster_df.iterrows():
-            name, role, shift = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip(), str(row[day]).strip()
-            if not shift: continue
-            if role == "นสน.":
-                nai_satanee_shift = shift
-                if shift in ['ย', 'พ', 'ป', 'ก', 'ย.', 'พ.', 'ป.', 'ก.']: nai_satanee_off = True
-            h_set = get_shift_hours(shift)
-            group_key = "ช.นสน.รวม" if role in ["ช.นสน.1", "ช.นสน.2"] else role
-            if group_key not in role_hours: role_hours[group_key] = []
-            role_hours[group_key].append((name, shift, h_set, role))
-            
-        for name, shift, h_set, l_role in role_hours.get("นสน.", []):
-            if not nai_satanee_off and len(h_set) > 0: errors.append(f"🔴 วันที่ {d}: '{name}' เข้าเวร นสน. ไม่ได้ เนื่องจาก นสน.ประจำ ไม่ได้ลา")
-            allowed = ['ว', 'ค', 'ค/ว', 'ว/ค', '00-12', '0-12', '12-24', '00-24']
-            clean_shift = shift.replace('(', '').replace(')', '')
-            if len(h_set) > 0 and clean_shift not in allowed: errors.append(f"🔴 วันที่ {d}: '{name}' ลงเวร '{shift}' ผิดเงื่อนไขของ นสน.")
-        
-        for g_key, members in role_hours.items():
-            if g_key == "นสน.": continue 
-            for i in range(len(members)):
-                for j in range(i+1, len(members)):
-                    n1, s1, h1, lr1 = members[i]
-                    n2, s2, h2, lr2 = members[j]
-                    if len(h1) > 0 and len(h2) > 0 and not h1.isdisjoint(h2): 
-                        if n1 == n2: errors.append(f"🟠 วันที่ {d}: '{n1}' ลงเวลาซ้อนทับกันเองใน Role '{lr1}' และ '{lr2}'")
-                        else:
-                            group_name = "ช.นสน." if g_key == "ช.นสน.รวม" else g_key
-                            errors.append(f"🟠 วันที่ {d}: เวลาซ้อนทับกันระหว่าง '{n1}' ({s1}) และ '{n2}' ({s2}) ในหน้าที่ {group_name}")
-    return errors
-
-st.markdown("---")
-st.subheader("✅ 3. ตรวจสอบเงื่อนไขตารางเวร")
-if st.button("🔍 กดเพื่อตรวจสอบความถูกต้อง (Validate)", type="secondary"):
-    errors = validate_roster(st.session_state.roster_df)
-    if len(errors) == 0: st.success("🎉 ตารางเวรถูกต้องตามเงื่อนไขทุกประการ!")
-    else:
-        st.error(f"พบข้อผิดพลาด {len(errors)} รายการ:")
-        for e in errors: st.warning(e)
-
-
-# ==========================================
-# 4. ฟังก์ชันสร้างไฟล์ 109 (ระบบ Pagination และ Run เลขหน้า)
+# 4. ฟังก์ชันสร้างไฟล์ Excel เป๊ะ 100% (openpyxl)
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
@@ -298,14 +268,13 @@ def generate_109(global_vars, roster_df):
     
     pages, current_page_rows = [], []
     for idx, row in roster_df.iterrows():
-        force_new_page = row.get("ขึ้นหน้าใหม่", False)
-        if len(current_page_rows) >= 15 or (force_new_page and len(current_page_rows) > 0):
+        if len(current_page_rows) >= 15 or (row.get("ขึ้นหน้าใหม่", False) and len(current_page_rows) > 0):
             pages.append(current_page_rows)
             current_page_rows = []
         current_page_rows.append(row)
     if current_page_rows: pages.append(current_page_rows)
         
-    total_pages = len(pages) if len(pages) > 0 else 1
+    total_pages = max(len(pages), 1)
     if len(pages) == 0: pages = [[]]
         
     template_ws = wb.active
@@ -322,51 +291,46 @@ def generate_109(global_vars, roster_df):
         page_num = page_idx + 1
         page_data = pages[page_idx]
         
-        for r in range(1, 100):
+        # หยอดตัวแปรส่วนหัว
+        for r in range(1, 15):
             for c in range(1, 40):
-                try:
-                    cell = ws.cell(row=r, column=c)
-                    val = cell.value
-                    if val and isinstance(val, str):
-                        new_val = val
-                        if "[" in new_val:
-                            for key, val_rep in replacements_109.items(): new_val = new_val.replace(key, str(val_rep))
-                        if "หน้า" in new_val and "/" in new_val:
-                            new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
-                        cell.value = new_val
-                except AttributeError: pass
+                val = ws.cell(row=r, column=c).value
+                if val and isinstance(val, str):
+                    new_val = val
+                    if "[" in new_val:
+                        for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
+                    if "หน้า" in new_val and "/" in new_val:
+                        new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
+                    ws.cell(row=r, column=c).value = new_val
                     
+        # หยอดตัวแปรส่วนล่าง (หมายเหตุ)
+        for r in range(39, 55):
+            for c in range(1, 40):
+                val = ws.cell(row=r, column=c).value
+                if val and isinstance(val, str) and "[" in val:
+                    new_val = val
+                    for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
+                    ws.cell(row=r, column=c).value = new_val
+                    
+        # ล้างข้อมูลแถว 8-36 (คงเหลือความสูงแถวและเส้นขอบเดิมไว้)
         for r in range(8, 37, 2):
-            try: ws.cell(row=r, column=1).value = ""
-            except AttributeError: pass
-            try: ws.cell(row=r, column=2).value = ""
-            except AttributeError: pass
-            try: ws.cell(row=r+1, column=2).value = ""
-            except AttributeError: pass
-            for d in range(1, 32):
-                try: ws.cell(row=r, column=2+d).value = ""
-                except AttributeError: pass
+            ws.cell(row=r, column=1).value = ""
+            ws.cell(row=r, column=2).value = ""
+            ws.cell(row=r+1, column=2).value = ""
+            for d in range(1, 32): ws.cell(row=r, column=2+d).value = ""
                 
+        # หยอดรายชื่อ 15 คน
         current_excel_row = 8
         for row_data in page_data:
-            list_idx = row_data['ลำดับ']
-            emp_name = str(row_data['ชื่อ-สกุล']).strip()
-            emp_pos = str(row_data['ตำแหน่งเบิก']).strip()
-            
-            try: ws.cell(row=current_excel_row, column=1).value = list_idx
-            except AttributeError: pass
-            try: ws.cell(row=current_excel_row, column=2).value = emp_name
-            except AttributeError: pass
-            try: ws.cell(row=current_excel_row+1, column=2).value = emp_pos
-            except AttributeError: pass
-            
+            ws.cell(row=current_excel_row, column=1).value = row_data['ลำดับ']
+            ws.cell(row=current_excel_row, column=2).value = str(row_data['ชื่อ-สกุล']).strip()
+            ws.cell(row=current_excel_row+1, column=2).value = str(row_data['ตำแหน่งเบิก']).strip()
             for d in range(1, 32):
                 shift = row_data.get(str(d), "")
-                val = str(shift).strip() if pd.notna(shift) else ""
-                try: ws.cell(row=current_excel_row, column=2+d).value = val
-                except AttributeError: pass
+                ws.cell(row=current_excel_row, column=2+d).value = str(shift).strip() if pd.notna(shift) else ""
             current_excel_row += 2
             
+        # ล็อกหน้ากระดาษให้เป็น 1 แผ่นกว้างพอดี
         if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1
@@ -379,11 +343,9 @@ def generate_109(global_vars, roster_df):
     output.seek(0)
     return output, total_pages
 
-# ==========================================
-# 5. ฟังก์ชันสร้างไฟล์ 177
-# ==========================================
 def generate_177(unique_key, roster_data, global_vars, ind_vars):
-    emp_info = st.session_state.employees[unique_key]
+    emp_info = st.session_state.employees.get(unique_key)
+    if not emp_info: return None
     rate = emp_info["เรท"]
     try: wb = openpyxl.load_workbook("ใบเบิก177 Update.xlsx")
     except: return None
@@ -401,30 +363,28 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
 
     for r in range(1, 55):
         for c in range(1, 15):
-            cell = ws.cell(row=r, column=c)
-            if cell.value and isinstance(cell.value, str) and "[" in cell.value:
-                new_val = cell.value
-                for key, val in replacements.items(): new_val = new_val.replace(key, str(val))
-                cell.value = new_val
+            val = ws.cell(row=r, column=c).value
+            if val and isinstance(val, str) and "[" in val:
+                new_val = val
+                for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
+                ws.cell(row=r, column=c).value = new_val
 
     start_row = 7
     for day in range(1, 32):
         row = start_row + day - 1
-        shift = roster_data.get(str(day), "").strip()
-        if shift in shift_data and shift_data[shift]["hours"] != "-":
-            ws.cell(row=row, column=2, value=shift_data[shift]["text"])
-            ws.cell(row=row, column=3, value=int(shift_data[shift]["hours"]))
+        shift = str(roster_data.get(str(day), "")).strip()
+        sData = shift_data.get(shift)
+        
+        if sData and sData["hours"] != "-":
+            ws.cell(row=row, column=2, value=sData["text"])
+            ws.cell(row=row, column=3, value=int(sData["hours"]))
             ws.cell(row=row, column=4, value=rate)
             ws.cell(row=row, column=5, value="00")
-            ws.cell(row=row, column=6, value=int(shift_data[shift]["hours"]) * rate)
+            ws.cell(row=row, column=6, value=int(sData["hours"]) * rate)
             ws.cell(row=row, column=7, value="00")
         else:
-            if shift == "ย": ws.cell(row=row, column=2, value="ย.")
-            elif shift == "พ": ws.cell(row=row, column=2, value="พ.")
-            else: ws.cell(row=row, column=2, value="-")
-            ws.cell(row=row, column=3, value="-"); ws.cell(row=row, column=4, value="-")
-            ws.cell(row=row, column=5, value="-"); ws.cell(row=row, column=6, value="-")
-            ws.cell(row=row, column=7, value="-")
+            ws.cell(row=row, column=2, value="ย." if shift in ["ย", "ย."] else ("พ." if shift in ["พ", "พ."] else "-"))
+            for col in range(3, 8): ws.cell(row=row, column=col, value="-")
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -439,49 +399,50 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     return output
 
 # ==========================================
-# 6. เมนูส่งออก (Export)
+# 5. เมนูส่งออก (Export)
 # ==========================================
 st.markdown("---")
-st.subheader("🖨️ 4. ส่งออกเอกสาร (Export)")
+st.subheader("🖨️ 4. ส่งออกเอกสาร Excel สำเร็จรูป")
 tab1, tab2 = st.tabs(["📄 ส่งออก 109 (ตารางเวรรวม)", "🧾 ส่งออก 177 (ใบเบิกรายบุคคล)"])
 
 with tab1:
-    st.markdown("**ตารางเวร 109 ของทั้งสถานี**")
+    st.markdown("**ตารางเวร 109 ของทั้งสถานี** (จัดหน้ากระดาษอัตโนมัติ)")
     if st.button("คลิกเพื่อสร้างไฟล์ 109", type="primary"):
         excel_109, total_pages = generate_109(global_data, st.session_state.roster_df)
         if excel_109:
-            st.success(f"สร้างไฟล์ 109 ประจำเดือน {global_data['val_13']} สำเร็จ! (จัดเป็น {total_pages} หน้า)")
-            st.info("💡 **ทริคก่อนพริ้นต์:** เมื่อเปิดไฟล์ Excel ให้ไปที่ Print แล้วเลือกเป็น **Print Entire Workbook (พิมพ์ทั้งสมุดงาน)**")
-            st.download_button("📥 ดาวน์โหลดไฟล์ 109", data=excel_109, file_name=f"109_{global_data['val_13']}.xlsx")
+            st.success(f"สร้างไฟล์ 109 เสร็จสิ้น! (รวม {total_pages} หน้า)")
+            st.download_button("📥 ดาวน์โหลดไฟล์ 109 (.xlsx)", data=excel_109, file_name=f"109_{global_data['val_13']}.xlsx")
 
 with tab2:
     st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก 177**")
     active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
-    selected_key_177_display = st.selectbox("เลือกพนักงานและ Role ที่ต้องการเบิก 177", active_emp_options)
+    selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการเบิก 177", active_emp_options)
     
     if selected_key_177_display:
         sel_name = selected_key_177_display.split(" (")[0]
         sel_role = selected_key_177_display.split(" (")[1].replace(")", "")
         selected_key_177 = f"{sel_name}_{sel_role}"
         
-        st.write(f"กำลังออกใบเบิกให้: **{sel_name}** (ในหน้าที่ **{sel_role}**)")
-        if f'ind_data_{selected_key_177}' not in st.session_state:
-            st.session_state[f'ind_data_{selected_key_177}'] = {
-                "val_4": "-", "val_5": "-", "val_6": "-", "val_9": "-", "val_10": "-", "val_11": "-", "val_12": "-"
-            }
+        saved_ind = local_storage.getItem(f"srt_ind_{selected_key_177}")
+        default_ind = {"val_4": "-", "val_5": "-", "val_6": "-", "val_9": "-", "val_10": "-", "val_11": "-", "val_12": "-"}
+        try:
+            if saved_ind: default_ind.update(json.loads(saved_ind))
+        except: pass
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.session_state[f'ind_data_{selected_key_177}']['val_4'] = st.text_input("วันหยุด [4]", st.session_state[f'ind_data_{selected_key_177}']['val_4'])
-            st.session_state[f'ind_data_{selected_key_177}']['val_9'] = st.text_input("หยุดพักผ่อน [9]", st.session_state[f'ind_data_{selected_key_177}']['val_9'])
+            default_ind['val_4'] = st.text_input("วันหยุด [4]", default_ind['val_4'])
+            default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9]", default_ind['val_9'])
         with c2:
-            st.session_state[f'ind_data_{selected_key_177}']['val_5'] = st.text_input("วันหยุดที่เบิกได้ [5]", st.session_state[f'ind_data_{selected_key_177}']['val_5'])
-            st.session_state[f'ind_data_{selected_key_177}']['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10]", st.session_state[f'ind_data_{selected_key_177}']['val_10'])
+            default_ind['val_5'] = st.text_input("วันหยุดที่เบิกได้ [5]", default_ind['val_5'])
+            default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10]", default_ind['val_10'])
         with c3:
-            st.session_state[f'ind_data_{selected_key_177}']['val_6'] = st.text_input("เดือนตัวย่อ [6]", st.session_state[f'ind_data_{selected_key_177}']['val_6'])
-            st.session_state[f'ind_data_{selected_key_177}']['val_11'] = st.text_input("พักผ่อนถึง [11]", st.session_state[f'ind_data_{selected_key_177}']['val_11'])
+            default_ind['val_6'] = st.text_input("เดือนตัวย่อ [6]", default_ind['val_6'])
+            default_ind['val_11'] = st.text_input("พักผ่อนถึง [11]", default_ind['val_11'])
         with c4:
-            st.session_state[f'ind_data_{selected_key_177}']['val_12'] = st.text_input("รวมพักผ่อน [12]", st.session_state[f'ind_data_{selected_key_177}']['val_12'])
+            default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", default_ind['val_12'])
+
+        local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind))
 
         if st.button(f"ออกใบเบิก 177 ของ {sel_name}", type="primary"):
             emp_row = st.session_state.roster_df[
@@ -489,9 +450,8 @@ with tab2:
                 (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)
             ].iloc[0]
             roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
-            ind_data = st.session_state[f'ind_data_{selected_key_177}']
-            excel_177 = generate_177(selected_key_177, roster_dict, global_data, ind_data)
             
+            excel_177 = generate_177(selected_key_177, roster_dict, global_data, default_ind)
             if excel_177:
-                st.success(f"สร้างใบเบิก 177 ของ {sel_name} เสร็จสิ้น!")
-                st.download_button("📥 ดาวน์โหลดไฟล์ 177", data=excel_177, file_name=f"ใบเบิก_{sel_name}_{sel_role}.xlsx")
+                st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
+                st.download_button("📥 ดาวน์โหลดไฟล์ 177 (.xlsx)", data=excel_177, file_name=f"177_{sel_name}.xlsx")
