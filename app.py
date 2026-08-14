@@ -89,10 +89,8 @@ if uploaded_backup:
 saved_emp_json = local_storage.getItem("srt_employees_data")
 
 if saved_emp_json and 'employees' not in st.session_state:
-    try:
-        st.session_state.employees = json.loads(saved_emp_json)
-    except:
-        st.session_state.employees = None
+    try: st.session_state.employees = json.loads(saved_emp_json)
+    except: st.session_state.employees = None
 
 if 'employees' not in st.session_state or not st.session_state.employees:
     if saved_emp_json:
@@ -114,7 +112,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                 pos = str(row.get("ตำแหน่ง", "-")).strip()
                 p_clean = pos.replace(" ", "")
                 
-                # ระบบช่วยคัดกรอง Role อัตโนมัติ (อัปเดตให้รองรับตำแหน่งใหม่)
                 role = pos
                 if "นายสถานี" in p_clean: role = "นสน."
                 elif "ช.นสน.ตช" in p_clean: role = "ช.นสน.1"
@@ -160,7 +157,6 @@ shift_data = {
     "ย": {"text": "ย.", "hours": "-"}, "พ": {"text": "พ.", "hours": "-"},
     "ป": {"text": "ป.", "hours": "-"}, "ก": {"text": "ก.", "hours": "-"},
 }
-
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
 def sort_roster_by_role(df, emp_dict):
@@ -279,11 +275,9 @@ if not edited_df.equals(st.session_state.roster_df):
     save_roster_to_local(edited_df)
 
 for _, row in edited_df.iterrows():
-    # เปลี่ยนมาใช้ .get() เพื่อป้องกันระบบล่มเวลาหาคอลัมน์ไม่เจอ
     name = str(row.get('ชื่อ-สกุล', '')).strip()
     role = str(row.get('Role (หน้าที่)', '')).strip()
     if not name: continue
-    
     key = f"{name}_{role}"
     if key in st.session_state.employees:
         st.session_state.employees[key]['Role'] = role
@@ -291,12 +285,11 @@ for _, row in edited_df.iterrows():
         st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
 
 # ==========================================
-# 5. ฟังก์ชันสร้างไฟล์ Excel
+# 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, และรายงานปฏิบัติงาน)
 # ==========================================
 def generate_109(global_vars, roster_df):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except: return None, 0
-    
     pages, current_page_rows = [], []
     for idx, row in roster_df.iterrows():
         if len(current_page_rows) >= 15 or (row.get("ขึ้นหน้าใหม่", False) and len(current_page_rows) > 0):
@@ -304,10 +297,8 @@ def generate_109(global_vars, roster_df):
             current_page_rows = []
         current_page_rows.append(row)
     if current_page_rows: pages.append(current_page_rows)
-        
     total_pages = max(len(pages), 1)
     if len(pages) == 0: pages = [[]]
-        
     template_ws = wb.active
     template_ws.title = "หน้าที่ 1"
     worksheets = [template_ws]
@@ -315,24 +306,19 @@ def generate_109(global_vars, roster_df):
         new_ws = wb.copy_worksheet(template_ws)
         new_ws.title = f"หน้าที่ {p}"
         worksheets.append(new_ws)
-        
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     
     for page_idx, ws in enumerate(worksheets):
         page_num = page_idx + 1
         page_data = pages[page_idx]
-        
         for r in range(1, 15):
             for c in range(1, 40):
                 val = ws.cell(row=r, column=c).value
                 if val and isinstance(val, str):
                     new_val = val
-                    if "[" in new_val:
-                        for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
-                    if "หน้า" in new_val and "/" in new_val:
-                        new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
+                    for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
+                    if "หน้า" in new_val and "/" in new_val: new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
                     ws.cell(row=r, column=c).value = new_val
-                    
         for r in range(39, 55):
             for c in range(1, 40):
                 val = ws.cell(row=r, column=c).value
@@ -340,13 +326,11 @@ def generate_109(global_vars, roster_df):
                     new_val = val
                     for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
                     ws.cell(row=r, column=c).value = new_val
-                    
         for r in range(8, 37, 2):
             ws.cell(row=r, column=1).value = ""
             ws.cell(row=r, column=2).value = ""
             ws.cell(row=r+1, column=2).value = ""
             for d in range(1, 32): ws.cell(row=r, column=2+d).value = ""
-                
         current_excel_row = 8
         for row_data in page_data:
             ws.cell(row=current_excel_row, column=1).value = row_data['ลำดับ']
@@ -356,14 +340,10 @@ def generate_109(global_vars, roster_df):
                 shift = row_data.get(str(d), "")
                 ws.cell(row=current_excel_row, column=2+d).value = str(shift).strip() if pd.notna(shift) else ""
             current_excel_row += 2
-            
         if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
-        ws.page_setup.fitToWidth = 1
-        ws.page_setup.fitToHeight = 0 
-        ws.page_setup.paperSize = ws.PAPERSIZE_A4
-        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-    
+        ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0 
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -376,7 +356,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     try: wb = openpyxl.load_workbook("ใบเบิก177 Update.xlsx")
     except: return None
     ws = wb.active
-
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[12]": ind_vars["val_12"],
@@ -386,7 +365,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         "[3]": f"{float(emp_info['เงินเดือน']):,.0f}" if (emp_info['เงินเดือน'] != "-" and str(emp_info['เงินเดือน']).isnumeric()) else emp_info['เงินเดือน'],
         "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"]
     }
-
     for r in range(1, 55):
         for c in range(1, 15):
             val = ws.cell(row=r, column=c).value
@@ -394,13 +372,11 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
                 new_val = val
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 ws.cell(row=r, column=c).value = new_val
-
     start_row = 7
     for day in range(1, 32):
         row = start_row + day - 1
         shift = str(roster_data.get(str(day), "")).strip()
         sData = shift_data.get(shift)
-        
         if sData and sData["hours"] != "-":
             ws.cell(row=row, column=2, value=sData["text"])
             ws.cell(row=row, column=3, value=int(sData["hours"]))
@@ -411,13 +387,78 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         else:
             ws.cell(row=row, column=2, value="ย." if shift in ["ย", "ย."] else ("พ." if shift in ["พ", "พ."] else "-"))
             for col in range(3, 8): ws.cell(row=row, column=col, value="-")
+    if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToHeight = 1; ws.page_setup.fitToWidth = 1
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+def generate_report_work(unique_key, roster_data, global_vars):
+    emp_info = st.session_state.employees.get(unique_key)
+    if not emp_info: return None
+    
+    try: wb = openpyxl.load_workbook("รายงานปฏิบัติงาน.xlsx")
+    except: return None
+    ws = wb.active
+
+    replacements = {
+        "[NAME]": emp_info["ชื่อ-สกุล"],
+        "[1]": emp_info["ตำแหน่ง"],
+        "[2]": emp_info["เลขประจำตัว"],
+        "[3]": f"{float(emp_info['เงินเดือน']):,.0f}" if (emp_info['เงินเดือน'] != "-" and str(emp_info['เงินเดือน']).isnumeric()) else emp_info['เงินเดือน'],
+        "[14]": global_vars["val_14"],
+        "[13]": global_vars["val_13"],
+    }
+
+    # แทนที่ตัวแปรในกระดาษ
+    for r in range(1, 55):
+        for c in range(1, 15):
+            val = ws.cell(row=r, column=c).value
+            if val and isinstance(val, str):
+                new_val = val
+                for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
+                ws.cell(row=r, column=c).value = new_val
+
+    # แทนที่เดือน และ ชื่อลายเซ็นต์ที่อาจถูกพิมพ์ค้างไว้ใน Template
+    ws.cell(row=2, column=7).value = global_vars["val_13"]
+    ws.cell(row=44, column=2).value = emp_info["ชื่อ-สกุล"]
+
+    # หยอดเวลาเข้า-ออกงาน
+    start_row = 8
+    for day in range(1, 32):
+        row = start_row + day - 1
+        shift = str(roster_data.get(str(day), "")).strip()
+        
+        start_time, end_time = "-", "-"
+        if shift:
+            s_clean = shift.replace("(", "").replace(")", "")
+            if s_clean == "ว": start_time, end_time = "06.00", "18.00"
+            elif s_clean == "ค": start_time, end_time = "00.00 - 06.00", "18.00 - 24.00"
+            elif s_clean == "ว/ค": start_time, end_time = "06.00 - 12.00", "18.00 - 24.00"
+            elif s_clean == "ค/ว": start_time, end_time = "00.00 - 06.00", "12.00 - 18.00"
+            elif s_clean in ["0-12", "00-12"]: start_time, end_time = "00.00", "12.00"
+            elif s_clean == "12-24": start_time, end_time = "12.00", "24.00"
+            elif s_clean == "00-24": start_time, end_time = "00.00", "24.00"
+            elif s_clean in ["ย", "ย."]: start_time, end_time = "ย.", ""
+            elif s_clean in ["พ", "พ."]: start_time, end_time = "พ.", ""
+            elif s_clean in ["ป", "ป."]: start_time, end_time = "ป.", ""
+            elif s_clean in ["ก", "ก."]: start_time, end_time = "ก.", ""
+            else: start_time, end_time = shift, ""
+            
+        ws.cell(row=row, column=2).value = start_time
+        ws.cell(row=row, column=5).value = end_time
+        if start_time not in ["-", "ย.", "พ.", "ป.", "ก.", ""]:
+            ws.cell(row=row, column=8).value = emp_info["ตำแหน่ง"]
+        else:
+            ws.cell(row=row, column=8).value = ""
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToHeight = 1
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.fitToHeight = 1; ws.page_setup.fitToWidth = 1
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
 
     output = io.BytesIO()
     wb.save(output)
@@ -429,7 +470,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
 # ==========================================
 st.markdown("---")
 st.subheader("🖨️ 4. ส่งออกเอกสาร Excel สำเร็จรูป")
-tab1, tab2 = st.tabs(["📄 ส่งออก 109 (ตารางเวรรวม)", "🧾 ส่งออก 177 (ใบเบิกรายบุคคล)"])
+tab1, tab2 = st.tabs(["📄 ส่งออก 109 (ตารางเวรรวม)", "🧾 ส่งออกเอกสารรายบุคคล (177 และ รายงานปฏิบัติงาน)"])
 
 with tab1:
     st.markdown("**ตารางเวร 109 ของทั้งสถานี** (จัดหน้ากระดาษอัตโนมัติ)")
@@ -440,9 +481,9 @@ with tab1:
             st.download_button("📥 ดาวน์โหลดไฟล์ 109 (.xlsx)", data=excel_109, file_name=f"109_{global_data['val_13']}.xlsx")
 
 with tab2:
-    st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก 177**")
+    st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก**")
     active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
-    selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการเบิก 177", active_emp_options)
+    selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการสร้างเอกสาร", active_emp_options)
     
     if selected_key_177_display:
         sel_name = selected_key_177_display.split(" (")[0]
@@ -470,14 +511,33 @@ with tab2:
 
         local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{selected_key_177}")
 
-        if st.button(f"ออกใบเบิก 177 ของ {sel_name}", type="primary"):
-            emp_row = st.session_state.roster_df[
-                (st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & 
-                (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)
-            ].iloc[0]
-            roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
-            
-            excel_177 = generate_177(selected_key_177, roster_dict, global_data, default_ind)
-            if excel_177:
-                st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
-                st.download_button("📥 ดาวน์โหลดไฟล์ 177 (.xlsx)", data=excel_177, file_name=f"177_{sel_name}.xlsx")
+        st.markdown("---")
+        
+        # แสดงปุ่มกด 2 อันคู่กัน
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button(f"🧾 ออกใบเบิก 177", type="primary", use_container_width=True):
+                emp_row = st.session_state.roster_df[
+                    (st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & 
+                    (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)
+                ].iloc[0]
+                roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
+                
+                excel_177 = generate_177(selected_key_177, roster_dict, global_data, default_ind)
+                if excel_177:
+                    st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
+                    st.download_button("📥 ดาวน์โหลดไฟล์ 177 (.xlsx)", data=excel_177, file_name=f"177_{sel_name}.xlsx")
+                    
+        with col_btn2:
+            if st.button(f"🕒 ออกรายงานปฏิบัติงาน", type="primary", use_container_width=True):
+                emp_row = st.session_state.roster_df[
+                    (st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & 
+                    (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)
+                ].iloc[0]
+                roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
+                
+                excel_work = generate_report_work(selected_key_177, roster_dict, global_data)
+                if excel_work:
+                    st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
+                    st.download_button("📥 ดาวน์โหลดรายงานปฏิบัติงาน (.xlsx)", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx")
