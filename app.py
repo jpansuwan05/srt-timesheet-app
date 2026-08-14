@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 from openpyxl.worksheet.properties import PageSetupProperties
+from openpyxl.styles import Border, Side, Alignment
 import io
 import datetime
 import re
@@ -245,24 +246,26 @@ with st.expander("➕ เพิ่มพนักงานใหม่ / เข�
         new_role = c3.selectbox("Role (หน้าที่)", roles_list)
         new_rate = c4.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
         
-        if st.form_submit_button("เพิ่มพนักงาน"):
+        if st.form_submit_button("เพิ่ม / อัปเดตพนักงาน"):
             if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
             else:
                 unique_key = f"{new_name}_{new_role}"
-                if unique_key not in st.session_state.employees:
-                    st.session_state.employees[unique_key] = {
-                        "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": "-", 
-                        "เงินเดือน": "-", "เรท": new_rate, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "Role": new_role, "is_regular": False
-                    }
+                st.session_state.employees[unique_key] = {
+                    "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, "เลขประจำตัว": "-", 
+                    "เงินเดือน": "-", "เรท": new_rate, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "Role": new_role, "is_regular": False
+                }
+                exists = any((r['ชื่อ-สกุล'] == new_name and r['Role (หน้าที่)'] == new_role) for _, r in st.session_state.roster_df.iterrows())
+                if not exists:
                     new_idx = len(st.session_state.roster_df) + 1
                     new_row = {"ขึ้นหน้าใหม่": False, "ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
                     for d in range(1, 32): new_row[str(d)] = ""
                     new_df = pd.DataFrame([new_row])
                     updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
                     st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
-                    save_roster_to_local(st.session_state.roster_df)
-                    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
-                    st.rerun()
+                save_roster_to_local(st.session_state.roster_df)
+                local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
+                st.success("✅ อัปเดตข้อมูลพนักงานเรียบร้อย!")
+                st.rerun()
 
 column_config = {
     "ขึ้นหน้าใหม่": st.column_config.CheckboxColumn("ขึ้นหน้าใหม่", width="small"),
@@ -351,18 +354,22 @@ def generate_109(global_vars, roster_df):
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0 
         ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-    
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    
-    # 📌 แก้ไขบรรทัดนี้แล้วครับ ส่งค่า output และ total_pages กลับไปทั้งคู่
-    return output, total_pages 
+    return output, total_pages
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
-    rate = emp_info["เรท"]
+    
+    # 📌 แก้ไขเรื่องการแปลค่า "เงินเดือน" ที่มีจุดทศนิยม
+    raw_salary = str(emp_info.get('เงินเดือน', '-'))
+    if raw_salary != "-" and raw_salary.replace('.', '', 1).isdigit():
+        salary_str = f"{float(raw_salary):,.0f}"
+    else:
+        salary_str = raw_salary
+
     try: wb = openpyxl.load_workbook("ใบเบิก177 Update.xlsx")
     except: return None
     ws = wb.active
@@ -372,35 +379,50 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         "[11]": ind_vars["val_11"], "[10]": ind_vars["val_10"], "[9]": ind_vars["val_9"],
         "[8]": global_vars["val_8"], "[7]": global_vars["val_7"], "[6]": ind_vars["val_6"],
         "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
-        "[3]": f"{float(emp_info['เงินเดือน']):,.0f}" if (emp_info['เงินเดือน'] != "-" and str(emp_info['เงินเดือน']).isnumeric()) else emp_info['เงินเดือน'],
+        "[3]": salary_str,  # นำเงินเดือนที่แก้ไขแล้วมาใส่
         "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"]
     }
     for r in range(1, 55):
-        for c in range(1, 25): 
+        for c in range(1, 40): 
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
             if val and isinstance(val, str) and "[" in val:
                 new_val = val
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
+                
     start_row = 7
     for day in range(1, 32):
         row = start_row + day - 1
         shift = str(roster_data.get(str(day), "")).strip()
         sData = shift_data.get(shift)
         if sData and sData["hours"] != "-":
+            # 📌 ระบบคณิตศาสตร์ใหม่ แยก "บาท" และ "สตางค์" อย่างแม่นยำ
+            rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
+            hours_val = int(sData["hours"])
+            
+            rate_baht = int(rate_val)
+            rate_satang = int(round((rate_val - rate_baht) * 100))
+            
+            total_money = hours_val * rate_val
+            total_baht = int(total_money)
+            total_satang = int(round((total_money - total_baht) * 100))
+
             ws.cell(row=row, column=2, value=sData["text"])
-            ws.cell(row=row, column=3, value=int(sData["hours"]))
-            ws.cell(row=row, column=4, value=rate)
-            ws.cell(row=row, column=5, value="00")
-            ws.cell(row=row, column=6, value=int(sData["hours"]) * rate)
-            ws.cell(row=row, column=7, value="00")
+            ws.cell(row=row, column=3, value=hours_val)
+            
+            # ใส่จำนวนเงินแยก บาท และ สตางค์ ให้ตรงช่องเป๊ะๆ
+            ws.cell(row=row, column=4, value=rate_baht if rate_baht > 0 else 0)
+            ws.cell(row=row, column=5, value=f"{rate_satang:02d}")
+            ws.cell(row=row, column=6, value=total_baht if total_baht > 0 else 0)
+            ws.cell(row=row, column=7, value=f"{total_satang:02d}")
         else:
             val = sData["text"] if sData else (shift if shift else "-")
             ws.cell(row=row, column=2, value=val)
             for col in range(3, 8): 
                 if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                     ws.cell(row=row, column=col, value="-")
+                    
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToHeight = 1; ws.page_setup.fitToWidth = 1
@@ -414,6 +436,12 @@ def generate_report_work(unique_key, roster_data, global_vars):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
+    raw_salary = str(emp_info.get('เงินเดือน', '-'))
+    if raw_salary != "-" and raw_salary.replace('.', '', 1).isdigit():
+        salary_str = f"{float(raw_salary):,.0f}"
+    else:
+        salary_str = raw_salary
+        
     try: wb = openpyxl.load_workbook("รายงานปฏิบัติงาน.xlsx")
     except: return None
     ws = wb.active
@@ -422,7 +450,7 @@ def generate_report_work(unique_key, roster_data, global_vars):
         "[NAME]": emp_info["ชื่อ-สกุล"],
         "[1]": emp_info["ตำแหน่ง"],
         "[2]": emp_info["เลขประจำตัว"],
-        "[3]": f"{float(emp_info['เงินเดือน']):,.0f}" if (emp_info['เงินเดือน'] != "-" and str(emp_info['เงินเดือน']).isnumeric()) else emp_info['เงินเดือน'],
+        "[3]": salary_str,
         "[14]": global_vars["val_14"],
         "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], 
@@ -430,7 +458,7 @@ def generate_report_work(unique_key, roster_data, global_vars):
     }
 
     for r in range(1, 55):
-        for c in range(1, 25):
+        for c in range(1, 40):
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
             if val and isinstance(val, str):
@@ -446,10 +474,16 @@ def generate_report_work(unique_key, roster_data, global_vars):
 
     start_row = 8
     
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    center_align = Alignment(horizontal='center', vertical='center')
+    
     ranges_to_unmerge = []
-    for merged_range in ws.merged_cells.ranges:
-        if start_row <= merged_range.min_row <= start_row + 31:
-            if merged_range.min_col <= 7 and merged_range.max_col >= 2:
+    for merged_range in list(ws.merged_cells.ranges):
+        if start_row <= merged_range.min_row <= start_row + 31 and start_row <= merged_range.max_row <= start_row + 31:
+            if merged_range.min_col >= 2 and merged_range.max_col <= 7:
                 ranges_to_unmerge.append(merged_range.coord)
     
     for r_coord in ranges_to_unmerge:
@@ -479,15 +513,21 @@ def generate_report_work(unique_key, roster_data, global_vars):
                 is_holiday = True 
             else: start_time, end_time = shift, ""
             
-        for c in range(2, 8): ws.cell(row=row, column=c).value = None
+        for c in range(2, 8): 
+            ws.cell(row=row, column=c).value = None
+            ws.cell(row=row, column=c).border = thin_border
 
         if is_holiday:
             ws.cell(row=row, column=2).value = start_time
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=7)
-            ws.cell(row=row, column=2).alignment = openpyxl.styles.Alignment(horizontal='center', vertical='center')
+            ws.cell(row=row, column=2).alignment = center_align
         else:
             ws.cell(row=row, column=2).value = start_time
             ws.cell(row=row, column=5).value = end_time
+            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=4)
+            ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=7)
+            ws.cell(row=row, column=2).alignment = center_align
+            ws.cell(row=row, column=5).alignment = center_align
 
         c_role = ws.cell(row=row, column=8)
         if type(c_role).__name__ != 'MergedCell':
