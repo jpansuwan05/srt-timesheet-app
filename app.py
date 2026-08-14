@@ -358,7 +358,6 @@ def generate_109(global_vars, roster_df):
             ws.cell(row=current_excel_row, column=2).value = str(row_data['ชื่อ-สกุล']).strip()
             ws.cell(row=current_excel_row+1, column=2).value = str(row_data['ตำแหน่งเบิก']).strip()
             for d in range(1, 32):
-                # 📌 ใน 109 จะพิมพ์พร้อมวงเล็บตามปกติ
                 shift = row_data.get(str(d), "")
                 ws.cell(row=current_excel_row, column=2+d).value = str(shift).strip() if pd.notna(shift) else ""
             current_excel_row += 2
@@ -403,21 +402,20 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
                 if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
                 
     start_row = 7
+    
+    # คำนวณเรท 1 ชม. รอไว้ก่อนเพื่อไปใส่ในช่อง "รวม"
+    rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
+    rate_baht = int(rate_val)
+    rate_satang = int(round((rate_val - rate_baht) * 100))
+    
     for day in range(1, 32):
         row = start_row + day - 1
         shift_raw = str(roster_data.get(str(day), "")).strip()
-        
-        # 📌 ระบบถอดวงเล็บสำหรับใบ 177 เพื่อให้เทียบรหัสได้อย่างแม่นยำ
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         sData = shift_data.get(shift_clean)
         
         if sData and sData["hours"] != "-":
-            rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
             hours_val = int(sData["hours"])
-            
-            rate_baht = int(rate_val)
-            rate_satang = int(round((rate_val - rate_baht) * 100))
-            
             total_money = hours_val * rate_val
             total_baht = int(total_money)
             total_satang = int(round((total_money - total_baht) * 100))
@@ -430,13 +428,23 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
             ws.cell(row=row, column=6, value=total_baht if total_baht > 0 else 0)
             ws.cell(row=row, column=7, value=f"{total_satang:02d}")
         else:
-            # ถ้าเป็นวันหยุด ย พ ป ฯลฯ ดึง text วันหยุดมาใส่
             val = sData["text"] if sData else (shift_raw if shift_raw else "-")
             ws.cell(row=row, column=2, value=val)
             for col in range(3, 8): 
                 if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                     ws.cell(row=row, column=col, value="-")
                     
+    # 📌 ค้นหาแถวที่มีคำว่า "รวม" และเติมเรท 1 ชั่วโมง ลงในช่อง บาท/สตางค์
+    for r in range(37, 45):
+        cell_v1 = str(ws.cell(row=r, column=1).value).strip()
+        cell_v2 = str(ws.cell(row=r, column=2).value).strip()
+        if "รวม" in cell_v1 or "รวม" in cell_v2:
+            if type(ws.cell(row=r, column=4)).__name__ != 'MergedCell':
+                ws.cell(row=r, column=4, value=rate_baht if rate_baht > 0 else 0)
+            if type(ws.cell(row=r, column=5)).__name__ != 'MergedCell':
+                ws.cell(row=r, column=5, value=f"{rate_satang:02d}")
+            break
+            
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToHeight = 1; ws.page_setup.fitToWidth = 1
@@ -513,9 +521,7 @@ def generate_report_work(unique_key, roster_data, global_vars):
         is_holiday = False
         
         if shift_raw:
-            # 📌 ระบบถอดวงเล็บสำหรับรายงานปฏิบัติงาน
             s_clean = shift_raw.replace("(", "").replace(")", "")
-            
             if s_clean == "ว": start_time, end_time = "06.00", "18.00"
             elif s_clean == "ค": start_time, end_time = "00.00-06.00", "18.00-24.00"
             elif s_clean == "ว/ค": start_time, end_time = "06.00-12.00", "18.00-24.00"
@@ -527,7 +533,7 @@ def generate_report_work(unique_key, roster_data, global_vars):
                 start_time = s_clean
                 end_time = ""
                 is_holiday = True 
-            else: start_time, end_time = shift_raw, "" # ถ้ารหัสแปลกๆ ปล่อยผ่าน
+            else: start_time, end_time = shift_raw, "" 
             
         for c in range(2, 8): 
             ws.cell(row=row, column=c).value = None
