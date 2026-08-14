@@ -2,12 +2,13 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 from openpyxl.worksheet.properties import PageSetupProperties
-from openpyxl.styles import Border, Side, Alignment
+from openpyxl.styles import Border, Side, Alignment, Font
 import io
 import datetime
 import re
 import json
 import uuid
+from copy import copy
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
 
@@ -163,6 +164,7 @@ shift_data = {
     "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
 }
+leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
 def sort_roster_by_role(df, emp_dict):
@@ -352,15 +354,47 @@ def generate_109(global_vars, roster_df):
             ws.cell(row=r, column=2).value = ""
             ws.cell(row=r+1, column=2).value = ""
             for d in range(1, 32): ws.cell(row=r, column=2+d).value = ""
+        
         current_excel_row = 8
         for row_data in page_data:
             ws.cell(row=current_excel_row, column=1).value = row_data['ลำดับ']
             ws.cell(row=current_excel_row, column=2).value = str(row_data['ชื่อ-สกุล']).strip()
             ws.cell(row=current_excel_row+1, column=2).value = str(row_data['ตำแหน่งเบิก']).strip()
+            
+            role_val = str(row_data.get('Role (หน้าที่)', '')).strip()
+            
             for d in range(1, 32):
                 shift = row_data.get(str(d), "")
-                ws.cell(row=current_excel_row, column=2+d).value = str(shift).strip() if pd.notna(shift) else ""
+                c_cell = ws.cell(row=current_excel_row, column=2+d)
+                c_cell.value = str(shift).strip() if pd.notna(shift) else ""
+                
+                # 📌 ระบบลงสีแบบมีเงื่อนไข (109)
+                if c_cell.font:
+                    new_font = copy(c_cell.font)
+                else:
+                    new_font = Font()
+                
+                if shift:
+                    s_clean = str(shift).strip().replace("(", "").replace(")", "")
+                    if s_clean in leave_types:
+                        new_font.color = "FF0000" # สีแดง (วันหยุด)
+                    elif s_clean in ["00-12", "0-12", "12-24"]:
+                        new_font.color = "008000" # สีเขียว (เวรพิเศษ)
+                        if new_font.size:
+                            new_font.size = new_font.size - 2 # ลดขนาดฟอนต์ลงเล็กน้อย
+                        else:
+                            new_font.size = 12
+                    elif role_val == "กั้นถนนฯฉิมพลี" and s_clean in ["ว", "ค", "ว/ค", "ค/ว"]:
+                        new_font.color = "0000FF" # สีน้ำเงิน (กั้นถนนฯฉิมพลี)
+                    else:
+                        new_font.color = "000000" # สีดำ (ปกติ)
+                else:
+                    new_font.color = "000000"
+                    
+                c_cell.font = new_font
+                
             current_excel_row += 2
+            
         if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0 
@@ -403,10 +437,21 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
                 
     start_row = 7
     
-    # คำนวณเรท 1 ชม. รอไว้ก่อนเพื่อไปใส่ในช่อง "รวม"
     rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
     rate_baht = int(rate_val)
     rate_satang = int(round((rate_val - rate_baht) * 100))
+    
+    # 📌 ฟังก์ชันช่วยลงสีใน 177
+    def set_cell_val_color(r, c, val, color_hex="000000"):
+        cell = ws.cell(row=r, column=c)
+        if type(cell).__name__ != 'MergedCell':
+            cell.value = val
+            if cell.font:
+                nf = copy(cell.font)
+                nf.color = color_hex
+                cell.font = nf
+            else:
+                cell.font = Font(color=color_hex)
     
     for day in range(1, 32):
         row = start_row + day - 1
@@ -414,35 +459,33 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         sData = shift_data.get(shift_clean)
         
+        is_holiday = shift_clean in leave_types
+        font_color = "FF0000" if is_holiday else "000000"
+        
         if sData and sData["hours"] != "-":
             hours_val = int(sData["hours"])
             total_money = hours_val * rate_val
             total_baht = int(total_money)
             total_satang = int(round((total_money - total_baht) * 100))
 
-            ws.cell(row=row, column=2, value=sData["text"])
-            ws.cell(row=row, column=3, value=hours_val)
-            
-            ws.cell(row=row, column=4, value=rate_baht if rate_baht > 0 else 0)
-            ws.cell(row=row, column=5, value=f"{rate_satang:02d}")
-            ws.cell(row=row, column=6, value=total_baht if total_baht > 0 else 0)
-            ws.cell(row=row, column=7, value=f"{total_satang:02d}")
+            set_cell_val_color(row, 2, sData["text"], font_color)
+            set_cell_val_color(row, 3, hours_val, font_color)
+            set_cell_val_color(row, 4, rate_baht if rate_baht > 0 else 0, font_color)
+            set_cell_val_color(row, 5, f"{rate_satang:02d}", font_color)
+            set_cell_val_color(row, 6, total_baht if total_baht > 0 else 0, font_color)
+            set_cell_val_color(row, 7, f"{total_satang:02d}", font_color)
         else:
             val = sData["text"] if sData else (shift_raw if shift_raw else "-")
-            ws.cell(row=row, column=2, value=val)
+            set_cell_val_color(row, 2, val, font_color)
             for col in range(3, 8): 
-                if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
-                    ws.cell(row=row, column=col, value="-")
+                set_cell_val_color(row, col, "-", font_color)
                     
-    # 📌 ค้นหาแถวที่มีคำว่า "รวม" และเติมเรท 1 ชั่วโมง ลงในช่อง บาท/สตางค์
     for r in range(37, 45):
         cell_v1 = str(ws.cell(row=r, column=1).value).strip()
         cell_v2 = str(ws.cell(row=r, column=2).value).strip()
         if "รวม" in cell_v1 or "รวม" in cell_v2:
-            if type(ws.cell(row=r, column=4)).__name__ != 'MergedCell':
-                ws.cell(row=r, column=4, value=rate_baht if rate_baht > 0 else 0)
-            if type(ws.cell(row=r, column=5)).__name__ != 'MergedCell':
-                ws.cell(row=r, column=5, value=f"{rate_satang:02d}")
+            set_cell_val_color(r, 4, rate_baht if rate_baht > 0 else 0, "000000")
+            set_cell_val_color(r, 5, f"{rate_satang:02d}", "000000")
             break
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
@@ -510,9 +553,22 @@ def generate_report_work(unique_key, roster_data, global_vars):
     
     for r_coord in ranges_to_unmerge:
         ws.unmerge_cells(r_coord)
+        
+    # 📌 ฟังก์ชันช่วยลงสีใน รายงานปฏิบัติงาน
+    def apply_style(r, c, val, color_hex="000000"):
+        cell = ws.cell(row=r, column=c)
+        if type(cell).__name__ != 'MergedCell':
+            cell.value = val
+            cell.border = thin_border
+            if cell.font:
+                nf = copy(cell.font)
+                nf.color = color_hex
+                cell.font = nf
+            else:
+                cell.font = Font(color=color_hex)
+            return cell
+        return None
 
-    leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
-    
     for day in range(1, 32):
         row = start_row + day - 1
         shift_raw = str(roster_data.get(str(day), "")).strip()
@@ -535,28 +591,27 @@ def generate_report_work(unique_key, roster_data, global_vars):
                 is_holiday = True 
             else: start_time, end_time = shift_raw, "" 
             
+        font_color = "FF0000" if is_holiday else "000000"
+
         for c in range(2, 8): 
-            ws.cell(row=row, column=c).value = None
-            ws.cell(row=row, column=c).border = thin_border
+            cell = ws.cell(row=row, column=c)
+            cell.value = None
+            cell.border = thin_border
 
         if is_holiday:
-            ws.cell(row=row, column=2).value = start_time
+            cell = apply_style(row, 2, start_time, font_color)
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=7)
-            ws.cell(row=row, column=2).alignment = center_align
+            if cell: cell.alignment = center_align
         else:
-            ws.cell(row=row, column=2).value = start_time
-            ws.cell(row=row, column=5).value = end_time
+            cell1 = apply_style(row, 2, start_time, font_color)
+            cell2 = apply_style(row, 5, end_time, font_color)
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=4)
             ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=7)
-            ws.cell(row=row, column=2).alignment = center_align
-            ws.cell(row=row, column=5).alignment = center_align
+            if cell1: cell1.alignment = center_align
+            if cell2: cell2.alignment = center_align
 
-        c_role = ws.cell(row=row, column=8)
-        if type(c_role).__name__ != 'MergedCell':
-            if start_time not in ["-", ""] and start_time not in leave_types:
-                c_role.value = emp_info["ตำแหน่ง"]
-            else:
-                c_role.value = ""
+        # ส่วนของตำแหน่งเบิก (ให้บังคับเป็นสีดำเสมอ)
+        apply_style(row, 8, emp_info["ตำแหน่ง"] if start_time not in ["-", ""] and not is_holiday else "", "000000")
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
