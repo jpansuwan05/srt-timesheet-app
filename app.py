@@ -115,9 +115,9 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                 p_clean = pos.replace(" ", "")
                 
                 role = pos
-                if "นายสถานี" in p_clean: role = "นสน."
-                elif "ช.นสน.ตช" in p_clean: role = "ช.นสน.1"
-                elif "ช.นสน.ตค" in p_clean: role = "ช.นสน.2"
+                if "นายสถานี" in p_clean or ("นสน" in p_clean and "ช.นสน" not in p_clean): role = "นสน."
+                elif "ช.นสน.ตช" in p_clean or "ช.นสน.1" in p_clean: role = "ช.นสน.1"
+                elif "ช.นสน.ตค" in p_clean or "ช.นสน.2" in p_clean: role = "ช.นสน.2"
                 elif "เสมียน" in p_clean: role = "เสมียน"
                 elif "ประแจ" in p_clean: role = "ประแจ"
                 elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
