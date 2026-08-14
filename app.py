@@ -5,6 +5,7 @@ from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.styles import Border, Side, Alignment, Font
 import io
 import datetime
+import calendar # <-- เพิ่มระบบปฏิทิน
 import re
 import json
 import uuid
@@ -12,7 +13,6 @@ from copy import copy
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
 
-# ตั้งค่าหน้าเว็บกว้างสุด
 st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wide")
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
 
@@ -220,41 +220,51 @@ if 'roster_df' not in st.session_state:
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
-# ดึงข้อมูล Global Data มาเตรียมไว้ก่อนสำหรับ Dashboard
+# ดึงข้อมูล Global Data มาเตรียมไว้ก่อน
 saved_global = local_storage.getItem("srt_global_data")
-default_global = {"val_13": "สิงหาคม", "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69"}
+default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69"}
 try:
     if saved_global: default_global.update(json.loads(saved_global))
 except: pass
 
 # ==========================================
+# 4. ตั้งค่าส่วนกลาง & ตารางเวร
+# ==========================================
+with st.container(border=True):
+    st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน (เพื่อคำนวณปฏิทิน)")
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        months_list = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+        default_m = default_global.get("val_13", "สิงหาคม")
+        if default_m not in months_list: default_m = "สิงหาคม"
+        val_13 = st.selectbox("เดือน [13]", months_list, index=months_list.index(default_m))
+        val_7 = st.text_input("คำสั่งแขวง [7]", default_global.get("val_7", ""))
+    with col_g2:
+        year_be = st.number_input("ปี พ.ศ. (สำหรับการจัดปฏิทิน)", min_value=2500, max_value=2600, value=int(default_global.get("year_be", 2569)))
+        val_8 = st.text_input("วันที่ลงคำสั่ง [8]", default_global.get("val_8", ""))
+        val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global.get("val_14", ""))
+
+    global_data = {"val_13": val_13, "year_be": year_be, "val_7": val_7, "val_8": val_8, "val_14": val_14}
+    local_storage.setItem("srt_global_data", json.dumps(global_data), key=f"ls_global_{uuid.uuid4().hex}")
+
+# 📌 คำนวณวันในเดือนนั้นๆ จากปฏิทินของจริง
+month_idx = months_list.index(val_13) + 1
+year_ce = year_be - 543
+first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
+
+# ==========================================
 # 📈 Dashboard สรุปข้อมูล
 # ==========================================
 st.markdown("### 📊 ภาพรวมข้อมูลสถานี")
-m1, m2, m3 = st.columns(3)
-m1.metric("👥 จำนวนพนักงานในตาราง", f"{len(st.session_state.roster_df)} คน")
-m2.metric("🗓️ ประจำเดือน", default_global["val_13"])
-m3.metric("📜 คำสั่งแขวง", default_global["val_7"])
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("👥 จำนวนพนักงาน", f"{len(st.session_state.roster_df)} คน")
+m2.metric("🗓️ ประจำเดือน", f"{val_13} {year_be}")
+m3.metric("📅 จำนวนวันในเดือนนี้", f"{num_days} วัน")
+m4.metric("📜 คำสั่งแขวง", val_7)
 st.markdown("---")
 
-# ==========================================
-# 4. ตั้งค่าส่วนกลาง & ตารางเวร (จัดเข้ากล่องสวยงาม)
-# ==========================================
 with st.container(border=True):
-    st.subheader("⚙️ 1. ตั้งค่าข้อมูลส่วนกลางประจำเดือน")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        val_13 = st.text_input("เดือนตัวเต็ม [13]", default_global["val_13"])
-        val_7 = st.text_input("คำสั่งแขวง [7]", default_global["val_7"])
-    with col_g2:
-        val_8 = st.text_input("วันที่ลงคำสั่ง [8]", default_global["val_8"])
-        val_14 = st.text_input("วันที่เซ็นเอกสารตัวย่อ [14]", default_global["val_14"])
-
-    global_data = {"val_13": val_13, "val_7": val_7, "val_8": val_8, "val_14": val_14}
-    local_storage.setItem("srt_global_data", json.dumps(global_data), key=f"ls_global_{uuid.uuid4().hex}")
-
-with st.container(border=True):
-    st.subheader("🗓️ 2. จัดการตารางเวร 1-31 วัน")
+    st.subheader(f"🗓️ 2. จัดการตารางเวร 1-{num_days} วัน")
 
     with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (คลิกเพื่อเปิด)"):
         with st.form("add_emp_form"):
@@ -295,6 +305,7 @@ with st.container(border=True):
                     st.success("✅ อัปเดตข้อมูลพนักงานเรียบร้อย!")
                     st.rerun()
 
+    # 📌 ปิดคอลัมน์ที่ไม่ตรงกับปฏิทินให้เป็นสีเทา (แก้ปัญหาเดือนที่ไม่มีวันที่ 31)
     column_config = {
         "ขึ้นหน้าใหม่": st.column_config.CheckboxColumn("ขึ้นหน้าใหม่", width="small"),
         "ลำดับ": st.column_config.NumberColumn("ลำดับ", width="small", disabled=True),
@@ -302,7 +313,11 @@ with st.container(border=True):
         "ตำแหน่งเบิก": st.column_config.TextColumn("ตำแหน่งเบิก", width="medium"), 
         "Role (หน้าที่)": st.column_config.SelectboxColumn("Role", options=roles_list, width="small")
     }
-    for d in range(1, 32): column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
+    for d in range(1, 32): 
+        if d <= num_days:
+            column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
+        else:
+            column_config[str(d)] = st.column_config.TextColumn(f"{d} (ไม่มี)", width="small", disabled=True)
 
     edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
 
@@ -323,7 +338,7 @@ with st.container(border=True):
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, และรายงานปฏิบัติงาน)
 # ==========================================
-def generate_109(global_vars, roster_df):
+def generate_109(global_vars, roster_df, num_days, first_weekday):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except: return None, 0
     pages, current_page_rows = [], []
@@ -343,6 +358,9 @@ def generate_109(global_vars, roster_df):
         new_ws.title = f"หน้าที่ {p}"
         worksheets.append(new_ws)
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
+    
+    # คำย่อวันในสัปดาห์ (อิงตาม Index ปฏิทิน Python: 0=จันทร์, 6=อาทิตย์)
+    days_th_abbr = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."]
     
     for page_idx, ws in enumerate(worksheets):
         page_num = page_idx + 1
@@ -364,11 +382,31 @@ def generate_109(global_vars, roster_df):
                     new_val = val
                     for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
                     if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
+        
+        # ค้นหาว่าแถวไหนเป็นแถวที่แสดงวันที่ 1, 2, 3 ...
+        date_row = None
+        for r in range(4, 10):
+            if str(ws.cell(row=r, column=3).value).strip() == "1" and str(ws.cell(row=r, column=4).value).strip() == "2":
+                date_row = r
+                break
+        if not date_row: date_row = 7 # ค่ามาตรฐานถ้าหาไม่เจอ
+        day_row = date_row - 1
+        
         for r in range(8, 37, 2):
             ws.cell(row=r, column=1).value = ""
             ws.cell(row=r, column=2).value = ""
             ws.cell(row=r+1, column=2).value = ""
             for d in range(1, 32): ws.cell(row=r, column=2+d).value = ""
+            
+        # 📌 เขียนตัวย่อวันในสัปดาห์ (จ. อ. พ. ...) ลงตาราง
+        for d in range(1, 32):
+            col = 2 + d
+            if d <= num_days:
+                wd = (first_weekday + d - 1) % 7
+                ws.cell(row=day_row, column=col).value = days_th_abbr[wd]
+            else:
+                ws.cell(row=day_row, column=col).value = ""
+                ws.cell(row=date_row, column=col).value = ""
         
         current_excel_row = 8
         for row_data in page_data:
@@ -379,33 +417,40 @@ def generate_109(global_vars, roster_df):
             role_val = str(row_data.get('Role (หน้าที่)', '')).strip()
             
             for d in range(1, 32):
-                shift = row_data.get(str(d), "")
-                c_cell = ws.cell(row=current_excel_row, column=2+d)
-                c_cell.value = str(shift).strip() if pd.notna(shift) else ""
+                col = 2 + d
+                c_cell = ws.cell(row=current_excel_row, column=col)
                 
-                if c_cell.font:
-                    new_font = copy(c_cell.font)
-                else:
-                    new_font = Font()
-                
-                if shift:
-                    s_clean = str(shift).strip().replace("(", "").replace(")", "")
-                    if s_clean in leave_types:
-                        new_font.color = "FF0000" 
-                    elif s_clean in ["00-12", "0-12", "12-24"]:
-                        new_font.color = "008000" 
-                        if new_font.size:
-                            new_font.size = new_font.size - 2 
-                        else:
-                            new_font.size = 12
-                    elif role_val == "กั้นถนนฯฉิมพลี" and s_clean in ["ว", "ค", "ว/ค", "ค/ว"]:
-                        new_font.color = "0000FF" 
-                    else:
-                        new_font.color = "000000" 
-                else:
-                    new_font.color = "000000"
+                # ถ้าเป็นวันที่มีอยู่จริงในเดือนนี้
+                if d <= num_days:
+                    shift = row_data.get(str(d), "")
+                    c_cell.value = str(shift).strip() if pd.notna(shift) else ""
                     
-                c_cell.font = new_font
+                    if c_cell.font: new_font = copy(c_cell.font)
+                    else: new_font = Font()
+                    
+                    if shift:
+                        s_clean = str(shift).strip().replace("(", "").replace(")", "")
+                        if s_clean in leave_types:
+                            new_font.color = "FF0000" 
+                        elif s_clean in ["00-12", "0-12", "12-24"]:
+                            new_font.color = "008000" 
+                            if new_font.size: new_font.size = new_font.size - 2 
+                            else: new_font.size = 12
+                        elif role_val == "กั้นถนนฯฉิมพลี" and s_clean in ["ว", "ค", "ว/ค", "ค/ว"]:
+                            new_font.color = "0000FF" 
+                        else:
+                            new_font.color = "000000" 
+                    else:
+                        new_font.color = "000000"
+                        
+                    c_cell.font = new_font
+                else:
+                    # ถ้าวันเกินขอบเขตปฏิทิน ให้ล้างทิ้ง
+                    c_cell.value = ""
+                    if c_cell.font:
+                        nf = copy(c_cell.font)
+                        nf.color = "000000"
+                        c_cell.font = nf
                 
             current_excel_row += 2
             
@@ -418,7 +463,7 @@ def generate_109(global_vars, roster_df):
     output.seek(0)
     return output, total_pages
 
-def generate_177(unique_key, roster_data, global_vars, ind_vars):
+def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
@@ -450,7 +495,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
                 if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
                 
     start_row = 7
-    
     rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
     rate_baht = int(rate_val)
     rate_satang = int(round((rate_val - rate_baht) * 100))
@@ -468,6 +512,13 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     
     for day in range(1, 32):
         row = start_row + day - 1
+        
+        # 📌 ถ้านอกปฏิทิน ให้ปล่อยว่าง
+        if day > num_days:
+            set_cell_val_color(row, 2, "", "000000")
+            for col in range(3, 8): set_cell_val_color(row, col, "", "000000")
+            continue
+            
         shift_raw = str(roster_data.get(str(day), "")).strip()
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         sData = shift_data.get(shift_clean)
@@ -510,7 +561,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars):
     output.seek(0)
     return output
 
-def generate_report_work(unique_key, roster_data, global_vars):
+def generate_report_work(unique_key, roster_data, global_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
@@ -551,7 +602,6 @@ def generate_report_work(unique_key, roster_data, global_vars):
         ws.cell(row=44, column=2).value = emp_info["ชื่อ-สกุล"]
 
     start_row = 8
-    
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
@@ -583,8 +633,17 @@ def generate_report_work(unique_key, roster_data, global_vars):
 
     for day in range(1, 32):
         row = start_row + day - 1
-        shift_raw = str(roster_data.get(str(day), "")).strip()
         
+        # 📌 ถ้านอกปฏิทิน ให้ล้างเนื้อหาทิ้งแต่คงเส้นตารางเอาไว้
+        if day > num_days:
+            for c in range(2, 8): 
+                cell = ws.cell(row=row, column=c)
+                cell.value = None
+                cell.border = thin_border
+            apply_style(row, 8, "", "000000")
+            continue
+            
+        shift_raw = str(roster_data.get(str(day), "")).strip()
         start_time, end_time = "-", "-"
         is_holiday = False
         
@@ -644,7 +703,7 @@ with st.container(border=True):
     with tab1:
         st.markdown("**ตารางเวร 109 ของทั้งสถานี** (จัดหน้ากระดาษอัตโนมัติ)")
         if st.button("คลิกเพื่อสร้างไฟล์ 109", type="primary"):
-            excel_109, total_pages = generate_109(global_data, st.session_state.roster_df)
+            excel_109, total_pages = generate_109(global_data, st.session_state.roster_df, num_days, first_weekday)
             if excel_109:
                 st.success(f"สร้างไฟล์ 109 เสร็จสิ้น! (รวม {total_pages} หน้า)")
                 st.download_button("📥 ดาวน์โหลดไฟล์ 109 (.xlsx)", data=excel_109, file_name=f"109_{global_data['val_13']}.xlsx")
@@ -691,7 +750,7 @@ with st.container(border=True):
                     ].iloc[0]
                     roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
                     
-                    excel_177 = generate_177(selected_key_177, roster_dict, global_data, default_ind)
+                    excel_177 = generate_177(selected_key_177, roster_dict, global_data, default_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 177 (.xlsx)", data=excel_177, file_name=f"177_{sel_name}.xlsx", use_container_width=True)
@@ -704,7 +763,7 @@ with st.container(border=True):
                     ].iloc[0]
                     roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
                     
-                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data)
+                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานปฏิบัติงาน (.xlsx)", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
