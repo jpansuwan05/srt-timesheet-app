@@ -455,19 +455,36 @@ with st.container(border=True):
         if d_str in edited_df.columns:
             edited_df[d_str] = edited_df[d_str].fillna("").astype(str).replace(["None", "nan", "<NA>"], "")
 
+    # 📌 อัปเดต Dictionary อัตโนมัติเมื่อมีการแก้ไขชื่อหรือ Role ในตารางเวร
     if not edited_df.equals(st.session_state.roster_df):
+        
+        # ตรวจสอบการเปลี่ยนชื่อหรือ Role
+        for i in range(len(edited_df)):
+            if i < len(st.session_state.roster_df):
+                old_name = str(st.session_state.roster_df.iloc[i]['ชื่อ-สกุล']).strip()
+                old_role = str(st.session_state.roster_df.iloc[i]['Role (หน้าที่)']).strip()
+                
+                new_name = str(edited_df.iloc[i]['ชื่อ-สกุล']).strip()
+                new_role = str(edited_df.iloc[i]['Role (หน้าที่)']).strip()
+                
+                if (old_name != new_name or old_role != new_role) and old_name:
+                    old_key = f"{old_name}_{old_role}"
+                    new_key = f"{new_name}_{new_role}"
+                    
+                    if old_key in st.session_state.employees:
+                        # สร้างคีย์ใหม่และโอนข้อมูลเดิมมาทั้งหมด
+                        st.session_state.employees[new_key] = st.session_state.employees[old_key].copy()
+                        st.session_state.employees[new_key]['ชื่อ-สกุล'] = new_name
+                        st.session_state.employees[new_key]['Role'] = new_role
+                        st.session_state.employees[new_key]['ตำแหน่ง'] = str(edited_df.iloc[i]['ตำแหน่งเบิก']).strip()
+                        
+                        # ลบคีย์เก่าทิ้ง
+                        del st.session_state.employees[old_key]
+
         st.session_state.roster_df = edited_df
         save_roster_to_local(edited_df)
-
-    for _, row in edited_df.iterrows():
-        name = str(row.get('ชื่อ-สกุล', '')).strip()
-        role = str(row.get('Role (หน้าที่)', '')).strip()
-        if not name: continue
-        key = f"{name}_{role}"
-        if key in st.session_state.employees:
-            st.session_state.employees[key]['Role'] = role
-            st.session_state.employees[key]['ชื่อ-สกุล'] = name
-            st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
+        local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_update_{uuid.uuid4().hex}")
+        st.rerun()
 
 # ==========================================
 # 🤖 🛡️ ระบบตรวจสอบความถูกต้องของตารางเวร (AI Validator)
@@ -946,7 +963,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-# 📌 เพิ่ม export_ind เข้าไปใน parameters ของ generate_report_work 
 def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
@@ -973,7 +989,7 @@ def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_day
         "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], 
         "[7]": global_vars["val_7"],
-        "[17]": ind_vars.get("val_17", ""), # 📌 ตัวแปร [17] ถูกดึงมาใช้งานตรงนี้
+        "[17]": ind_vars.get("val_17", ""), 
     }
 
     for r in range(1, 55):
@@ -1165,7 +1181,6 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
-                    # 📌 ส่งตัวแปร export_ind เข้าไปให้ฟังก์ชันสร้างรายงานปฏิบัติงานด้วย
                     excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
@@ -1185,7 +1200,6 @@ with st.container(border=True):
                         if excel_178:
                             zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                        # 📌 ส่งตัวแปร export_ind เข้าไปเช่นเดียวกัน
                         excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_work:
                             zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
@@ -1250,7 +1264,6 @@ with st.container(border=True):
                             excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                            # 📌 ส่งตัวแปร export_ind เข้าไปในฟังก์ชันสร้างรายงานปฏิบัติงานด้วย
                             excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
