@@ -9,6 +9,7 @@ import calendar
 import re
 import json
 import uuid
+import zipfile  # 📌 นำเข้าไลบรารีสำหรับสร้างไฟล์ ZIP
 from copy import copy
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
@@ -138,7 +139,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     acc1_raw = str(row.get("รหัสบัญชี", "-")) if pd.notna(row.get("รหัสบัญชี")) else "-"
                     if acc1_raw.endswith(".0"): acc1_raw = acc1_raw[:-2]
                     
-                    # 📌 ดึงรหัสบัญชี 2 สำหรับใช้ในใบ 178
                     acc2_raw = str(row.get("รหัสบัญชี2", "-")) if pd.notna(row.get("รหัสบัญชี2")) else "-"
                     if acc2_raw.endswith(".0"): acc2_raw = acc2_raw[:-2]
                     
@@ -461,7 +461,7 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# ฟังก์ชันผู้ช่วยจัดกลุ่มช่วงวัน
+# 📌 ฟังก์ชันพระเอก! กวาดข้อมูลจากตารางมาคำนวณวันหยุดทั้งหมดให้อัตโนมัติ
 def extract_employee_stats(roster_row):
     weekly_days = []
     leave_days_vacation = []
@@ -534,6 +534,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     days_th_abbr = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."]
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
+    
     ph_append_str = ""
     if ph_dict_local:
         ph_texts = []
@@ -1061,10 +1062,12 @@ with st.container(border=True):
             local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps({"val_6": val_6_manual}), key=f"ls_ind_{uuid.uuid4().hex}")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            col_btn1, col_btn2, col_btn3 = st.columns(3)
             
+            # --- ปุ่มดาวน์โหลดแยก ---
+            st.markdown("##### 📄 ดาวน์โหลดแยกทีละไฟล์")
+            col_btn1, col_btn2, col_btn3 = st.columns(3)
             with col_btn1:
-                if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", type="primary", use_container_width=True):
+                if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
                     excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
@@ -1073,7 +1076,7 @@ with st.container(border=True):
                         st.error("ไม่พบไฟล์ 'ใบ177 Update.xlsx' ในระบบ (กรุณาอัปโหลดก่อนครับ)")
                         
             with col_btn2:
-                if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", type="primary", use_container_width=True):
+                if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", use_container_width=True):
                     excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
@@ -1082,8 +1085,38 @@ with st.container(border=True):
                         st.error("ไม่พบไฟล์ '178 อัพเดท.xlsx' ในระบบ (กรุณาอัปโหลดก่อนครับ)")
 
             with col_btn3:
-                if st.button(f"🕒 ออกรายงานปฏิบัติงาน", type="primary", use_container_width=True):
+                if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
                     excel_work = generate_report_work(selected_key_177, roster_dict, global_data, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
+
+            # --- ปุ่มดาวน์โหลดรวม ZIP ---
+            st.markdown("---")
+            st.markdown("##### 📦 ดาวน์โหลดรวมทุกไฟล์ในคลิกเดียว (ZIP)")
+            if st.button(f"แพ็กรวมเอกสารของ {sel_name} (177, 178, รายงาน)", type="primary", use_container_width=True):
+                with st.spinner("กำลังแพ็กไฟล์..."):
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        if excel_177:
+                            zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
+                            
+                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        if excel_178:
+                            zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
+                            
+                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, num_days)
+                        if excel_work:
+                            zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
+                            
+                    st.session_state[f"zip_export_{selected_key_177}"] = zip_buffer.getvalue()
+
+            if f"zip_export_{selected_key_177}" in st.session_state:
+                st.download_button(
+                    "📥 คลิกดาวน์โหลดไฟล์ ZIP ทั้งหมด",
+                    data=st.session_state[f"zip_export_{selected_key_177}"],
+                    file_name=f"เอกสารเบิกเงิน_{sel_name}.zip",
+                    mime="application/zip",
+                    use_container_width=True
+                )
