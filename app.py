@@ -229,7 +229,6 @@ default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "
 try:
     if saved_global: 
         parsed = json.loads(saved_global)
-        # เผื่อเวอร์ชันเก่าที่บันทึกเป็น List
         if "public_holidays" in parsed and isinstance(parsed["public_holidays"], list):
             parsed["public_holidays_dict"] = {str(k): "" for k in parsed["public_holidays"]}
         default_global.update(parsed)
@@ -274,7 +273,7 @@ with st.container(border=True):
 
     ph_dict = {}
     if public_holidays_list:
-        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 178 และ 109)")
+        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109)")
         cols = st.columns(min(len(public_holidays_list), 4))
         for i, d in enumerate(sorted(public_holidays_list)):
             with cols[i % 4]:
@@ -374,7 +373,21 @@ with st.container(border=True):
 # 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, 178, และรายงานปฏิบัติงาน)
 # ==========================================
 
-# ฟังก์ชันดึงวันหยุดจากตารางอัตโนมัติ เพื่อนำไปแปลงเป็น "8-11", "13-14"
+def parse_days_count(day_str):
+    total = 0
+    if not day_str or day_str == "-": return 0
+    parts = str(day_str).split(",")
+    for p in parts:
+        p = p.strip()
+        if "-" in p:
+            try:
+                start, end = p.split("-")
+                total += (int(end) - int(start)) + 1
+            except: pass
+        elif p.isdigit():
+            total += 1
+    return total
+
 def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
     weekly_days = []
     is_in_period = False
@@ -411,6 +424,38 @@ def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
     v4 = ranges[0] if len(ranges) > 0 else "-"
     v5 = ",".join(ranges[1:]) if len(ranges) > 1 else "-"
     return v4, v5
+
+# 📌 ฟังก์ชันดึงวันลาพักผ่อน (ย) อัตโนมัติ สำหรับกล่อง [9], [10], [11], [12]
+def get_auto_leave_ranges(roster_data, num_days_in_month):
+    leave_days = []
+    for d in range(1, num_days_in_month + 1):
+        shift_raw = str(roster_data.get(str(d), "")).strip()
+        shift_clean = shift_raw.replace("(", "").replace(")", "")
+        if shift_clean in ["ย", "ย."]:
+            leave_days.append(d)
+            
+    if not leave_days: return "-", "-", "-", "0"
+        
+    total_leave = len(leave_days)
+    start_leave = leave_days[0]
+    end_leave = leave_days[-1]
+    
+    ranges = []
+    start = leave_days[0]
+    prev = leave_days[0]
+    for d in leave_days[1:]:
+        if d == prev + 1: prev = d
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = d; prev = d
+    ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+    
+    val_9 = ",".join(ranges)
+    val_10 = str(start_leave)
+    val_11 = str(end_leave)
+    val_12 = str(total_leave)
+    
+    return val_9, val_10, val_11, val_12
 
 def generate_109(global_vars, roster_df, num_days, first_weekday):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
@@ -516,7 +561,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                 
             current_excel_row += 2
             
-        # 📌 เขียนชื่อวันหยุดนักขัตฤกษ์ลงด้านล่างสุดของใบ 109
         if ph_dict_local:
             ph_texts = []
             for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
@@ -652,7 +696,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
     
-    # 📌 นับยอดวันหยุดทั้งหมดล่วงหน้าเพื่อเตรียมข้อความ "รวม xx วัน"
     total_holidays = 0
     is_in_weekly_period = False
     
@@ -721,9 +764,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
-        
         if "(" in shift_raw: is_in_weekly_period = True
-        
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
@@ -753,10 +794,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
-                    # 📌 ดึงชื่อวันหยุดมาใส่
-                    h_name = ph_dict_local.get(str(day), "วันหยุดนักขัตฤกษ์")
-                    if not h_name.strip(): h_name = "วันหยุดนักขัตฤกษ์"
-                    ws.cell(row=row, column=2).value = f"({h_name})"
+                    ws.cell(row=row, column=2).value = "(วันหยุดนักขัตฤกษ์)"
                     public_holiday_count += 1
                 elif is_weekly:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
@@ -773,15 +811,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
         ws.cell(row=42, column=8).value = total_days_final
         
-    # 📌 จัดเรียงข้อความ วันหยุดนักขัตฤกษ์ ในหมายเหตุ (คอลัมน์ K แถว 40)
-    if type(ws.cell(row=40, column=11)).__name__ != 'MergedCell':
-        if ph_dict_local:
-            ph_texts = []
-            for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
-                ph_texts.append(f"วันที่ {d_str} {name}" if name else f"{d_str}")
-            ws.cell(row=40, column=11).value = f"วันหยุดนักขัตฤกษ์ ({', '.join(ph_texts)})"
-        else:
-            ws.cell(row=40, column=11).value = "วันหยุดนักขัตฤกษ์"
+    # 📌 ลบการเขียนทับข้อความวันหยุดใน K40 ทิ้งไป (ให้เหลือแค่ในใบ 109 ตามที่ผู้ใช้ต้องการ)
     
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -957,24 +987,27 @@ with st.container(border=True):
                 if saved_ind: default_ind.update(json.loads(saved_ind))
             except: pass
             
-            # 📌 ดึงวันที่ตาราง มาสร้างเป็น default ให้กล่อง [4] และ [5]
             emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
             roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
+            
+            # 📌 ดึงวันที่ทำงานล่วงเวลา (สำหรับ [4], [5])
             val_4_auto, val_5_auto = get_auto_holiday_ranges(roster_dict, num_days, global_data.get("public_holidays_dict", {}))
+            
+            # 📌 ดึงวันที่ลาพักผ่อน (ย) (สำหรับ [9], [10], [11], [12])
+            val_9_auto, val_10_auto, val_11_auto, val_12_auto = get_auto_leave_ranges(roster_dict, num_days)
 
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                # 📌 กล่องนี้จะพิมพ์ให้อัตโนมัติตามตารางเลยครับ
                 default_ind['val_4'] = st.text_input("วันหยุด [4] (ตรวจจับอัตโนมัติ)", value=val_4_auto)
-                default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9]", default_ind['val_9'])
+                default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9] (ตรวจจับอัตโนมัติ)", value=val_9_auto)
             with c2:
                 default_ind['val_5'] = st.text_input("วันหยุด [5] (ตรวจจับอัตโนมัติ)", value=val_5_auto)
-                default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10]", default_ind['val_10'])
+                default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10] (ตรวจจับอัตโนมัติ)", value=val_10_auto)
             with c3:
                 default_ind['val_6'] = st.text_input("เดือนตัวย่อ [6]", default_ind['val_6'])
-                default_ind['val_11'] = st.text_input("พักผ่อนถึง [11]", default_ind['val_11'])
+                default_ind['val_11'] = st.text_input("พักผ่อนถึง [11] (ตรวจจับอัตโนมัติ)", value=val_11_auto)
             with c4:
-                default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", default_ind['val_12'])
+                default_ind['val_12'] = st.text_input("รวมพักผ่อน [12] (ตรวจจับอัตโนมัติ)", value=val_12_auto)
 
             local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{uuid.uuid4().hex}")
 
