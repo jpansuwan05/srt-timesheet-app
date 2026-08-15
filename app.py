@@ -172,6 +172,7 @@ shift_data = {
     "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
 }
+# รหัสลาหยุดต่างๆ ที่จะไม่นำมานับเป็นวันทำงานในใบเบิก 178
 leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
@@ -223,6 +224,7 @@ if 'roster_df' not in st.session_state:
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
+# ดึงข้อมูล Global Data มาเตรียมไว้ก่อน
 saved_global = local_storage.getItem("srt_global_data")
 default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}}
 try:
@@ -354,7 +356,6 @@ with st.container(border=True):
 
     edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
 
-    # 📌 จัดการทำความสะอาดค่า None หรือ nan ที่เกิดจากการกดลบข้อมูลในตาราง
     for d in range(1, 32):
         d_str = str(d)
         if d_str in edited_df.columns:
@@ -495,9 +496,8 @@ def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
         is_public = str(d) in ph_dict_current
         is_weekly = False
         
-        if shift_clean in ["ย", "ย."]:
-            is_weekly = True
-        elif shift_clean and shift_clean not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
+        # คัดกรองวันหยุด (แต่ไม่รวม ย, พ, ลา เพราะพวกนี้คือไม่ได้ทำงาน)
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             if is_in_period and not is_public:
                 is_weekly = True
                 
@@ -579,7 +579,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
     
-    # 📌 จัดเตรียมข้อความชื่อวันหยุดนักขัตฤกษ์เพื่อเอาไปต่อท้ายในใบ 109
     ph_append_str = ""
     if ph_dict_local:
         ph_texts = []
@@ -600,7 +599,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                     if "หน้า" in new_val and "/" in new_val: new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
                     if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
                     
-        # 📌 กวาดหาคำว่า "วันหยุดนักขัตฤกษ์" ในส่วนท้ายกระดาษ แล้วนำข้อความวันหยุดไปต่อท้าย
         for r in range(35, 55):
             for c in range(1, 40):
                 c_cell = ws.cell(row=r, column=c)
@@ -858,6 +856,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         shift_raw = str(roster_data.get(str(day), "")).strip()
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
+        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = day in manual_weekly_holidays
@@ -1060,7 +1059,7 @@ with st.container(border=True):
     with tab2:
         st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก**")
         
-        st.info("💡 **เคล็ดลับการทำงาน:** ตารางเวรด้านบนคือตารางหลัก หากต้องการเปลี่ยนแปลงวันหยุด ให้แก้ไขวงเล็บ `(` หรือ `)` ในตารางด้านบน ระบบจะอัปเดตตัวเลขในกล่องข้อความให้อัตโนมัติครับ")
+        st.info("💡 **เคล็ดลับการทำงาน:** หากต้องการเปลี่ยนวันหยุด กรุณาแก้ไขผ่าน **ตารางเวรด้านบน** ระบบจะล้างความจำและอัปเดตกล่องข้อความเหล่านี้ให้ใหม่ 100% ครับ")
         
         active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
         selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการสร้างเอกสาร", active_emp_options)
@@ -1082,18 +1081,30 @@ with st.container(border=True):
             val_4_auto, val_5_auto = get_auto_holiday_ranges(roster_dict, num_days, global_data.get("public_holidays_dict", {}))
             val_9_auto, val_10_auto, val_11_auto, val_12_auto = get_auto_leave_ranges(roster_dict, num_days)
 
+            # 📌 ล้างสมอง (Cache) ของกล่องข้อความทันทีที่ตารางเวรเปลี่ยน
+            roster_hash = hash(str(roster_dict) + str(global_data.get("public_holidays_dict", {})))
+            state_key = f"rh_{selected_key_177}"
+            if st.session_state.get(state_key) != roster_hash:
+                st.session_state[f"tb_v4_{selected_key_177}"] = val_4_auto
+                st.session_state[f"tb_v5_{selected_key_177}"] = val_5_auto
+                st.session_state[f"tb_v9_{selected_key_177}"] = val_9_auto
+                st.session_state[f"tb_v10_{selected_key_177}"] = val_10_auto
+                st.session_state[f"tb_v11_{selected_key_177}"] = val_11_auto
+                st.session_state[f"tb_v12_{selected_key_177}"] = val_12_auto
+                st.session_state[state_key] = roster_hash
+
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                default_ind['val_4'] = st.text_input("วันหยุด [4] (ตรวจจับอัตโนมัติ)", value=val_4_auto)
-                default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9] (ตรวจจับอัตโนมัติ)", value=val_9_auto)
+                default_ind['val_4'] = st.text_input("วันหยุด [4]", key=f"tb_v4_{selected_key_177}")
+                default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9]", key=f"tb_v9_{selected_key_177}")
             with c2:
-                default_ind['val_5'] = st.text_input("วันหยุด [5] (ตรวจจับอัตโนมัติ)", value=val_5_auto)
-                default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10] (ตรวจจับอัตโนมัติ)", value=val_10_auto)
+                default_ind['val_5'] = st.text_input("วันหยุด [5]", key=f"tb_v5_{selected_key_177}")
+                default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10]", key=f"tb_v10_{selected_key_177}")
             with c3:
                 default_ind['val_6'] = st.text_input("เดือนตัวย่อ [6]", default_ind['val_6'])
-                default_ind['val_11'] = st.text_input("พักผ่อนถึง [11] (ตรวจจับอัตโนมัติ)", value=val_11_auto)
+                default_ind['val_11'] = st.text_input("พักผ่อนถึง [11]", key=f"tb_v11_{selected_key_177}")
             with c4:
-                default_ind['val_12'] = st.text_input("รวมพักผ่อน [12] (ตรวจจับอัตโนมัติ)", value=val_12_auto)
+                default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", key=f"tb_v12_{selected_key_177}")
 
             local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{uuid.uuid4().hex}")
 
