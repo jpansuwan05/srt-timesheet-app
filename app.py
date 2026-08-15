@@ -272,7 +272,7 @@ with st.container(border=True):
 
     ph_dict = {}
     if public_holidays_list:
-        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109 และ 178)")
+        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109 และคอลัมน์ด้านซ้ายของ 178)")
         cols = st.columns(min(len(public_holidays_list), 4))
         for i, d in enumerate(sorted(public_holidays_list)):
             with cols[i % 4]:
@@ -369,7 +369,83 @@ with st.container(border=True):
             st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
 
 # ==========================================
-# 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, 178, และรายงานปฏิบัติงาน)
+# 🤖 🛡️ ระบบตรวจสอบความถูกต้องของตารางเวร (AI Validator)
+# ==========================================
+st.markdown("---")
+st.markdown("#### 🤖 ระบบ AI ตรวจสอบข้อผิดพลาดของตารางเวร (ตามเงื่อนไข รฟท.)")
+validator_errors = []
+
+def get_shift_clean_for_val(row_data, day_num):
+    if str(day_num) not in row_data: return ""
+    s = str(row_data[str(day_num)]).strip().replace("(", "").replace(")", "")
+    return s
+
+for d in range(1, num_days + 1):
+    day_info = {r: {'reg':[], 'sub':[]} for r in roles_list}
+    
+    for _, r_data in edited_df.iterrows():
+        r_name = str(r_data.get('ชื่อ-สกุล', '')).strip()
+        r_role = str(r_data.get('Role (หน้าที่)', '')).strip()
+        shift_c = get_shift_clean_for_val(r_data, d)
+        if not r_name or not shift_c: continue
+        
+        k = f"{r_name}_{r_role}"
+        is_reg = st.session_state.employees.get(k, {}).get('is_regular', False)
+        if r_role in day_info:
+            if is_reg: day_info[r_role]['reg'].append({'name': r_name, 'shift': shift_c})
+            else: day_info[r_role]['sub'].append({'name': r_name, 'shift': shift_c})
+
+    # กฎข้อ 1 & 2: นสน. (ผู้จัดการสถานี)
+    nsn_allowed = ["ว", "ค", "ค/ว", "ว/ค", "00-12", "12-24", "00-24", "0-12"]
+    for p in day_info['นสน.']['reg'] + day_info['นสน.']['sub']:
+        if p['shift'] not in leave_types and p['shift'] not in nsn_allowed:
+            validator_errors.append(f"วันที่ {d}: {p['name']} (นสน.) ลงรหัส '{p['shift']}' ไม่ถูกต้อง (ต้องเป็น ว, ค, ค/ว, ว/ค, 00-12, 12-24, 00-24)")
+            
+    reg_nsn_shift = day_info['นสน.']['reg'][0]['shift'] if day_info['นสน.']['reg'] else ""
+    for p in day_info['นสน.']['sub']:
+        if p['shift'] not in leave_types:
+            if reg_nsn_shift not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "ล", "ลา", "น"]:
+                validator_errors.append(f"วันที่ {d}: {p['name']} (มาแทน นสน.) เข้าเวรไม่ได้ เพราะนายสถานีตัวจริงไม่ได้ลา (ตัวจริงลง '{reg_nsn_shift}')")
+                
+    # กฎข้อ 3 & 4: การจับคู่ ช.นสน.1 (ตช) กับ ช.นสน.2 (ตค) ต้องไม่ทับซ้อนกัน
+    def get_active(role_str):
+        return [x for x in (day_info[role_str]['reg'] + day_info[role_str]['sub']) if x['shift'] not in leave_types]
+        
+    active_ch1 = get_active('ช.นสน.1')
+    active_ch2 = get_active('ช.นสน.2')
+    
+    for p1 in active_ch1:
+        for p2 in active_ch2:
+            s1, s2 = p1['shift'], p2['shift']
+            if s1 == s2:
+                validator_errors.append(f"วันที่ {d}: {p1['name']} ({s1}) และ {p2['name']} ({s2}) เข้าเวรซ้ำกัน")
+            elif s1 == "ว" and s2 != "ค":
+                validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ค')")
+            elif s1 == "ค" and s2 != "ว":
+                validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว')")
+            elif s1 == "ว/ค" and s2 != "ค/ว":
+                validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ว/ค' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ค/ว')")
+            elif s1 == "ค/ว" and s2 != "ว/ค":
+                validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค/ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว/ค')")
+
+    # กฎข้อ 5: คนมาแทน (Substitute) ต้องลงเวรไม่ซ้ำกับตัวจริงในตำแหน่งเดียวกัน
+    for role in roles_list:
+        if role == 'นสน.': continue
+        for r in day_info[role]['reg']:
+            for s in day_info[role]['sub']:
+                if r['shift'] not in leave_types and s['shift'] not in leave_types:
+                    if r['shift'] == s['shift']:
+                        validator_errors.append(f"วันที่ {d}: {s['name']} ลงเวร '{s['shift']}' ซ้ำกับตัวจริง {r['name']} ในตำแหน่ง {role}")
+                        
+if validator_errors:
+    st.error(f"พบข้อผิดพลาดในตารางเวรทั้งหมด {len(validator_errors)} จุด (โปรดตรวจสอบและแก้ไข)")
+    for err in validator_errors:
+        st.warning(err, icon="⚠️")
+else:
+    st.success("✅ ตารางเวรถูกต้องตามเงื่อนไขของ รฟท. (ไม่พบการลงเวลาทับซ้อนหรือผิดคู่)")
+
+# ==========================================
+# 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
 def parse_days_count(day_str):
@@ -504,7 +580,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
         ph_texts = []
         for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
             ph_texts.append(f"วันที่ {d_str} {name}" if name else f"วันที่ {d_str}")
-        ph_append_str = " (" + " , ".join(ph_texts) + ")"
+        ph_append_str = " (" + ", ".join(ph_texts) + ")"
 
     for page_idx, ws in enumerate(worksheets):
         page_num = page_idx + 1
@@ -526,13 +602,10 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                 val = c_cell.value
                 if val and isinstance(val, str):
                     new_val = val
-                    
-                    # แทนที่ตัวแปรพื้นฐาน
                     for k, v in replacements_109.items(): 
                         if k in new_val:
                             new_val = new_val.replace(k, str(v))
                     
-                    # หาคำว่า วันหยุดนักขัตฤกษ์ แล้วต่อท้าย (ถ้ายังไม่มีวงเล็บวันที่ต่อท้ายอยู่)
                     if "วันหยุดนักขัตฤกษ์" in new_val and ph_append_str:
                         if ph_append_str not in new_val:
                             new_val = new_val.replace("วันหยุดนักขัตฤกษ์", f"วันหยุดนักขัตฤกษ์{ph_append_str}")
@@ -725,6 +798,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     ws = wb.active
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
+    
     total_45 = parse_days_count(ind_vars.get('val_4', '0')) + parse_days_count(ind_vars.get('val_5', '0'))
     
     replacements = {
@@ -779,7 +853,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         shift_raw = str(roster_data.get(str(day), "")).strip()
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = day in manual_weekly_holidays
@@ -981,9 +1054,6 @@ with st.container(border=True):
 
     with tab2:
         st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก**")
-        
-        st.info("💡 **เคล็ดลับการทำงาน:** ตารางเวรด้านบนคือตารางหลัก หากต้องการเปลี่ยนแปลงวันหยุด ให้แก้ไขวงเล็บ `(` หรือ `)` ในตารางด้านบน ระบบจะอัปเดตตัวเลขในกล่องข้อความให้อัตโนมัติครับ")
-        
         active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
         selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการสร้างเอกสาร", active_emp_options)
         
@@ -1006,16 +1076,16 @@ with st.container(border=True):
 
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                default_ind['val_4'] = st.text_input("วันหยุด [4] (ตรวจจับอัตโนมัติ)", value=val_4_auto)
-                default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9] (ตรวจจับอัตโนมัติ)", value=val_9_auto)
+                default_ind['val_4'] = st.text_input("วันหยุด [4]", value=val_4_auto)
+                default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9]", value=val_9_auto)
             with c2:
-                default_ind['val_5'] = st.text_input("วันหยุด [5] (ตรวจจับอัตโนมัติ)", value=val_5_auto)
-                default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10] (ตรวจจับอัตโนมัติ)", value=val_10_auto)
+                default_ind['val_5'] = st.text_input("วันหยุด [5]", value=val_5_auto)
+                default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10]", value=val_10_auto)
             with c3:
                 default_ind['val_6'] = st.text_input("เดือนตัวย่อ [6]", default_ind['val_6'])
-                default_ind['val_11'] = st.text_input("พักผ่อนถึง [11] (ตรวจจับอัตโนมัติ)", value=val_11_auto)
+                default_ind['val_11'] = st.text_input("พักผ่อนถึง [11]", value=val_11_auto)
             with c4:
-                default_ind['val_12'] = st.text_input("รวมพักผ่อน [12] (ตรวจจับอัตโนมัติ)", value=val_12_auto)
+                default_ind['val_12'] = st.text_input("รวมพักผ่อน [12]", value=val_12_auto)
 
             local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{uuid.uuid4().hex}")
 
