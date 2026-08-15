@@ -135,6 +135,13 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     emp_id_raw = str(row.get("เลขประจำตัว", "-")) if pd.notna(row.get("เลขประจำตัว")) else "-"
                     if emp_id_raw.endswith(".0"): emp_id_raw = emp_id_raw[:-2]
                     
+                    acc1_raw = str(row.get("รหัสบัญชี", "-")) if pd.notna(row.get("รหัสบัญชี")) else "-"
+                    if acc1_raw.endswith(".0"): acc1_raw = acc1_raw[:-2]
+                    
+                    # 📌 ดึงรหัสบัญชี 2 สำหรับใช้ในใบ 178
+                    acc2_raw = str(row.get("รหัสบัญชี2", "-")) if pd.notna(row.get("รหัสบัญชี2")) else "-"
+                    if acc2_raw.endswith(".0"): acc2_raw = acc2_raw[:-2]
+                    
                     unique_key = f"{name}_{role}"
                     emp_dict[unique_key] = {
                         "ชื่อ-สกุล": name, "ตำแหน่ง": pos, 
@@ -142,7 +149,8 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                         "เงินเดือน": str(row.get("เงินเดือน", "-")) if pd.notna(row.get("เงินเดือน")) else "-", 
                         "เรท": float(row.get("เรท 1 ชั่วโมง", 0)) if pd.notna(row.get("เรท 1 ชั่วโมง")) else 0.0,
                         "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
-                        "รหัสบัญชี": str(row.get("รหัสบัญชี", "-")) if pd.notna(row.get("รหัสบัญชี")) else "-",
+                        "รหัสบัญชี": acc1_raw,
+                        "รหัสบัญชี2": acc2_raw,
                         "Role": role, "is_regular": True 
                     }
                 st.session_state.employees = emp_dict
@@ -207,7 +215,7 @@ if 'roster_df' not in st.session_state:
             if unique_key not in st.session_state.employees:
                  st.session_state.employees[unique_key] = {
                         "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
-                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "Role": role, "is_regular": False
+                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "Role": role, "is_regular": False
                  }
     else:
         data = []
@@ -323,6 +331,7 @@ with st.container(border=True):
                         "เรท": new_rate if new_rate > 0 else old_rate, 
                         "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
                         "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
+                        "รหัสบัญชี2": old_data.get("รหัสบัญชี2", "-"), 
                         "Role": new_role, "is_regular": old_data.get("is_regular", False)
                     }
                     
@@ -452,7 +461,7 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# 📌 ฟังก์ชันพระเอก! กวาดข้อมูลจากตารางมาคำนวณวันหยุดทั้งหมดให้อัตโนมัติและแม่นยำ
+# ฟังก์ชันผู้ช่วยจัดกลุ่มช่วงวัน
 def extract_employee_stats(roster_row):
     weekly_days = []
     leave_days_vacation = []
@@ -525,8 +534,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     days_th_abbr = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."]
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
-    
-    # 📌 จัดเตรียมข้อความชื่อวันหยุดนักขัตฤกษ์เพื่อเอาไปต่อท้ายคำในใบ 109
     ph_append_str = ""
     if ph_dict_local:
         ph_texts = []
@@ -547,7 +554,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                     if "หน้า" in new_val and "/" in new_val: new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
                     if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
                     
-        # 📌 กวาดหาคำว่า "วันหยุดนักขัตฤกษ์" ในส่วนท้ายกระดาษ แล้วนำข้อความวันหยุดไปต่อท้ายอย่างเนียนๆ
         for r in range(35, 55):
             for c in range(1, 40):
                 c_cell = ws.cell(row=r, column=c)
@@ -646,17 +652,16 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     else:
         salary_str = raw_salary
 
-    # 📌 เปลี่ยนชื่อไฟล์ดึงข้อมูลให้ตรงกับไฟล์ใหม่ของคุณ
     try: wb = openpyxl.load_workbook("ใบ177 Update.xlsx")
     except: return None
     ws = wb.active
     replacements = {
-        "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
+        "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info.get("รหัสบัญชี", "-"), "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"], 
-        "[17]": ind_vars["val_17"], "[12]": ind_vars["val_12"],
-        "[11]": ind_vars["val_11"], "[10]": ind_vars["val_10"], "[9]": ind_vars["val_9"],
-        "[8]": global_vars["val_8"], "[7]": global_vars["val_7"], "[6]": ind_vars["val_6"],
-        "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
+        "[17]": ind_vars.get("val_17", ""), "[12]": ind_vars.get("val_12", ""),
+        "[11]": ind_vars.get("val_11", ""), "[10]": ind_vars.get("val_10", ""), "[9]": ind_vars.get("val_9", ""),
+        "[8]": global_vars["val_8"], "[7]": global_vars["val_7"], "[6]": ind_vars.get("val_6", ""),
+        "[5]": ind_vars.get("val_5", ""), "[4]": ind_vars.get("val_4", ""),
         "[3]": salary_str,  
         "[2]": emp_id_str, "[1]": emp_info["ตำแหน่ง"]
     }
@@ -747,7 +752,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     else:
         salary_str = raw_salary
 
-    # 📌 เปลี่ยนชื่อไฟล์ดึงข้อมูลให้ตรงกับไฟล์ใหม่ของคุณ
     try: wb = openpyxl.load_workbook("178 อัพเดท.xlsx")
     except: return None
     ws = wb.active
@@ -755,12 +759,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     ph_dict_local = global_vars.get("public_holidays_dict", {})
     
     replacements = {
-        "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
+        "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info.get("รหัสบัญชี2", "-"), "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], "[7]": global_vars["val_7"],
-        "[17]": ind_vars["val_17"], "[12]": ind_vars["val_12"], 
-        "[11]": ind_vars["val_11"], "[10]": ind_vars["val_10"], "[9]": ind_vars["val_9"],
-        "[6]": ind_vars["val_6"], "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
+        "[17]": ind_vars.get("val_17", ""), "[12]": ind_vars.get("val_12", ""), 
+        "[11]": ind_vars.get("val_11", ""), "[10]": ind_vars.get("val_10", ""), "[9]": ind_vars.get("val_9", ""),
+        "[6]": ind_vars.get("val_6", ""), "[5]": ind_vars.get("val_5", ""), "[4]": ind_vars.get("val_4", ""),
         "[3]": salary_str,  
         "[2]": emp_id_str, "[1]": emp_info["ตำแหน่ง"]
     }
@@ -785,7 +789,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     start_row = 7
     weekly_holiday_count = 0
     public_holiday_count = 0
-    
     is_in_weekly_period = False
     
     for day in range(1, 32):
@@ -804,7 +807,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจากตาราง 178 อย่างเด็ดขาด (รวมถึง ย ด้วย)
+        # ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด (ย, พ, ป, ลา ฯลฯ)
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = False
@@ -886,7 +889,6 @@ def generate_report_work(unique_key, roster_data, global_vars, num_days):
         "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], 
         "[7]": global_vars["val_7"],
-        "[17]": ind_vars.get("val_17", ""),
     }
 
     for r in range(1, 55):
