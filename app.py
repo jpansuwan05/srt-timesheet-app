@@ -21,7 +21,6 @@ st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wid
 # ==========================================
 st.markdown("""
     <style>
-        /* 1. แต่งหน้าตาของการ์ด Dashboard (Metric) ให้มีเงาและขอบมน */
         div[data-testid="metric-container"] {
             background-color: #f8f9fa;
             border-radius: 15px;
@@ -33,8 +32,6 @@ st.markdown("""
         div[data-testid="metric-container"]:hover {
             transform: scale(1.02);
         }
-        
-        /* 2. แต่งปุ่มกดให้โค้งมนและเด้งได้ตอนเอาเมาส์ชี้ */
         div.stButton > button {
             border-radius: 10px;
             font-weight: 600;
@@ -45,8 +42,6 @@ st.markdown("""
             transform: translateY(-3px);
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
         }
-        
-        /* 3. ปรับขอบโค้งมนให้กับ Container และ Expander */
         div[data-testid="stVerticalBlock"] > div[style*="border"] {
             border-radius: 15px !important;
             box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
@@ -59,8 +54,6 @@ st.markdown("""
             border: 1px solid #e9ecef !important;
             box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
         }
-
-        /* 4. รองรับโหมดมืด (Dark Mode) */
         @media (prefers-color-scheme: dark) {
             div[data-testid="metric-container"] {
                 background-color: #262730;
@@ -370,44 +363,69 @@ st.markdown("---")
 with st.container(border=True):
     st.subheader(f"🗓️ 2. จัดการตารางเวร 1-{num_days} วัน")
 
-    with st.expander("➕ เพิ่มพนักงานใหม่ / เข้าเวรแทน (คลิกเพื่อเปิด)"):
-        with st.form("add_emp_form"):
-            c1, c2, c3, c4 = st.columns(4)
-            new_name = c1.text_input("ชื่อ-สกุล*")
-            new_pos = c2.text_input("ตำแหน่งเบิก*")
-            new_role = c3.selectbox("Role (หน้าที่)", roles_list)
-            new_rate = c4.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
+    with st.expander("👥 จัดการพนักงาน (เพิ่ม / แก้ไข / ลบ)"):
+        tab_add, tab_del = st.tabs(["➕ เพิ่ม/แก้ไขพนักงาน", "❌ ลบพนักงาน"])
+        
+        with tab_add:
+            with st.form("add_emp_form"):
+                c1, c2, c3, c4 = st.columns(4)
+                new_name = c1.text_input("ชื่อ-สกุล*")
+                new_pos = c2.text_input("ตำแหน่งเบิก*")
+                new_role = c3.selectbox("Role (หน้าที่)", roles_list)
+                new_rate = c4.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
+                
+                if st.form_submit_button("บันทึกข้อมูลพนักงาน", type="primary"):
+                    if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
+                    else:
+                        unique_key = f"{new_name}_{new_role}"
+                        old_data = st.session_state.employees.get(unique_key, {})
+                        old_salary = old_data.get("เงินเดือน", "-")
+                        old_rate = float(old_data.get("เรท", 0.0))
+                        
+                        st.session_state.employees[unique_key] = {
+                            "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, 
+                            "เลขประจำตัว": old_data.get("เลขประจำตัว", "-"), 
+                            "เงินเดือน": old_salary, 
+                            "เรท": new_rate if new_rate > 0 else old_rate, 
+                            "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
+                            "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
+                            "รหัสบัญชี2": old_data.get("รหัสบัญชี2", "-"), 
+                            "Role": new_role, "is_regular": old_data.get("is_regular", False)
+                        }
+                        
+                        exists = any((r['ชื่อ-สกุล'] == new_name and r['Role (หน้าที่)'] == new_role) for _, r in st.session_state.roster_df.iterrows())
+                        if not exists:
+                            new_idx = len(st.session_state.roster_df) + 1
+                            new_row = {"ขึ้นหน้าใหม่": False, "ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
+                            for d in range(1, 32): new_row[str(d)] = ""
+                            new_df = pd.DataFrame([new_row])
+                            updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
+                            st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
+                        save_roster_to_local(st.session_state.roster_df)
+                        local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
+                        st.success("✅ อัปเดตข้อมูลพนักงานเรียบร้อย!")
+                        st.rerun()
+
+        with tab_del:
+            active_emp_options_del = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
+            emp_to_del = st.selectbox("เลือกพนักงานที่ต้องการลบออกจากตาราง", active_emp_options_del, key="del_emp_select")
             
-            if st.form_submit_button("เพิ่ม / อัปเดตพนักงาน", type="primary"):
-                if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
-                else:
-                    unique_key = f"{new_name}_{new_role}"
-                    old_data = st.session_state.employees.get(unique_key, {})
-                    old_salary = old_data.get("เงินเดือน", "-")
-                    old_rate = float(old_data.get("เรท", 0.0))
+            if st.button("❌ ยืนยันการลบพนักงาน", type="primary"):
+                if emp_to_del:
+                    del_name = emp_to_del.split(" (")[0]
+                    del_role = emp_to_del.split(" (")[1].replace(")", "")
+                    del_key = f"{del_name}_{del_role}"
                     
-                    st.session_state.employees[unique_key] = {
-                        "ชื่อ-สกุล": new_name, "ตำแหน่ง": new_pos, 
-                        "เลขประจำตัว": old_data.get("เลขประจำตัว", "-"), 
-                        "เงินเดือน": old_salary, 
-                        "เรท": new_rate if new_rate > 0 else old_rate, 
-                        "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
-                        "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
-                        "รหัสบัญชี2": old_data.get("รหัสบัญชี2", "-"), 
-                        "Role": new_role, "is_regular": old_data.get("is_regular", False)
-                    }
+                    st.session_state.roster_df = st.session_state.roster_df[~((st.session_state.roster_df['ชื่อ-สกุล'] == del_name) & (st.session_state.roster_df['Role (หน้าที่)'] == del_role))]
                     
-                    exists = any((r['ชื่อ-สกุล'] == new_name and r['Role (หน้าที่)'] == new_role) for _, r in st.session_state.roster_df.iterrows())
-                    if not exists:
-                        new_idx = len(st.session_state.roster_df) + 1
-                        new_row = {"ขึ้นหน้าใหม่": False, "ลำดับ": new_idx, "ชื่อ-สกุล": new_name, "ตำแหน่งเบิก": new_pos, "Role (หน้าที่)": new_role}
-                        for d in range(1, 32): new_row[str(d)] = ""
-                        new_df = pd.DataFrame([new_row])
-                        updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
-                        st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
+                    if del_key in st.session_state.employees:
+                        del st.session_state.employees[del_key]
+                        
+                    st.session_state.roster_df['ลำดับ'] = range(1, len(st.session_state.roster_df) + 1)
+                    
                     save_roster_to_local(st.session_state.roster_df)
                     local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
-                    st.success("✅ อัปเดตข้อมูลพนักงานเรียบร้อย!")
+                    st.success(f"ลบรายชื่อ {del_name} ออกจากตารางเรียบร้อยแล้ว!")
                     st.rerun()
 
     column_config = {
@@ -423,7 +441,14 @@ with st.container(border=True):
         else:
             column_config[str(d)] = st.column_config.TextColumn(f"{d} (ไม่มี)", width="small", disabled=True)
 
-    edited_df = st.data_editor(st.session_state.roster_df, hide_index=True, use_container_width=True, column_config=column_config, key="roster_table")
+    edited_df = st.data_editor(
+        st.session_state.roster_df, 
+        hide_index=True, 
+        use_container_width=True, 
+        column_config=column_config, 
+        num_rows="dynamic",
+        key="roster_table"
+    )
 
     for d in range(1, 32):
         d_str = str(d)
@@ -921,7 +946,8 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_report_work(unique_key, roster_data, global_vars, num_days):
+# 📌 เพิ่ม export_ind เข้าไปใน parameters ของ generate_report_work 
+def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
@@ -947,7 +973,7 @@ def generate_report_work(unique_key, roster_data, global_vars, num_days):
         "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], 
         "[7]": global_vars["val_7"],
-        "[17]": ind_vars.get("val_17", ""),
+        "[17]": ind_vars.get("val_17", ""), # 📌 ตัวแปร [17] ถูกดึงมาใช้งานตรงนี้
     }
 
     for r in range(1, 55):
@@ -1139,10 +1165,41 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
-                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, num_days)
+                    # 📌 ส่งตัวแปร export_ind เข้าไปให้ฟังก์ชันสร้างรายงานปฏิบัติงานด้วย
+                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
+
+            st.markdown("---")
+            st.markdown("##### 📦 ดาวน์โหลดรวมทุกไฟล์ในคลิกเดียว (ZIP)")
+            if st.button(f"แพ็กรวมเอกสารของ {sel_name} (177, 178, รายงาน)", type="primary", use_container_width=True):
+                with st.spinner("กำลังแพ็กไฟล์..."):
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        if excel_177:
+                            zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
+                            
+                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        if excel_178:
+                            zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
+                            
+                        # 📌 ส่งตัวแปร export_ind เข้าไปเช่นเดียวกัน
+                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        if excel_work:
+                            zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
+                            
+                    st.session_state[f"zip_export_{selected_key_177}"] = zip_buffer.getvalue()
+
+            if f"zip_export_{selected_key_177}" in st.session_state:
+                st.download_button(
+                    "📥 คลิกดาวน์โหลดไฟล์ ZIP ทั้งหมด",
+                    data=st.session_state[f"zip_export_{selected_key_177}"],
+                    file_name=f"เอกสารเบิกเงิน_{sel_name}.zip",
+                    mime="application/zip",
+                    use_container_width=True
+                )
 
     with tab3:
         st.markdown("**ดาวน์โหลดเอกสารของพนักงานหลายคนพร้อมกันในคลิกเดียว ระบบจะแยกไฟล์ใส่โฟลเดอร์ให้เป็นระเบียบ**")
@@ -1193,7 +1250,8 @@ with st.container(border=True):
                             excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                            excel_work = generate_report_work(unique_key, roster_dict, global_data, num_days)
+                            # 📌 ส่งตัวแปร export_ind เข้าไปในฟังก์ชันสร้างรายงานปฏิบัติงานด้วย
+                            excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
                     st.session_state["batch_zip_export"] = zip_buffer.getvalue()
