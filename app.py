@@ -349,6 +349,23 @@ with st.container(border=True):
 # ==========================================
 # 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, 178, และรายงานปฏิบัติงาน)
 # ==========================================
+
+# ฟังก์ชันผู้ช่วยคำนวณจำนวนวันจากการพิมพ์แบบขีด (เช่น "13-14", "8-11")
+def parse_days_count(day_str):
+    total = 0
+    if not day_str or day_str == "-": return 0
+    parts = str(day_str).split(",")
+    for p in parts:
+        p = p.strip()
+        if "-" in p:
+            try:
+                start, end = p.split("-")
+                total += (int(end) - int(start)) + 1
+            except: pass
+        elif p.isdigit():
+            total += 1
+    return total
+
 def generate_109(global_vars, roster_df, num_days, first_weekday):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
     except: return None, 0
@@ -458,7 +475,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output, total_pages
+    return output
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
@@ -556,7 +573,6 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-# 📌 อัปเดต 178 ให้จัดการวงเล็บช่วงวันหยุด และรวบยอดไว้ในแถวเดียว
 def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
@@ -571,28 +587,9 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
-    # 📌 1. นำร่องนับยอดจำนวนวันหยุดทั้งหมดล่วงหน้า (เพื่อให้เอาเลขไปใส่ในข้อความ "รวม xx วัน" ได้พอดี)
-    total_holidays = 0
-    is_in_weekly_period = False
-    public_holidays_list = global_vars.get("public_holidays", [])
+    # 📌 คำนวณยอดรวมของ [4] และ [5] จากการพิมพ์แบบช่วงวันที่ เช่น "13-14", "8-11"
+    total_45 = parse_days_count(ind_vars.get('val_4', '0')) + parse_days_count(ind_vars.get('val_5', '0'))
     
-    for day in range(1, num_days + 1):
-        shift_raw = str(roster_data.get(str(day), "")).strip()
-        if "(" in shift_raw: is_in_weekly_period = True
-        shift_clean = shift_raw.replace("(", "").replace(")", "")
-        
-        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
-            is_public = day in public_holidays_list
-            is_weekly = False
-            if is_in_weekly_period and not is_public:
-                is_weekly = True
-            
-            if is_public or is_weekly:
-                total_holidays += 1
-                
-        if ")" in shift_raw: is_in_weekly_period = False
-    
-    # 📌 2. นำ total_holidays ไปแทรกแทนที่ข้อความ "รวม 00 วัน" 
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"],
@@ -601,11 +598,11 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         "[6]": ind_vars["val_6"], "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
         "[3]": salary_str,  
         "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"],
-        "รวม 08 วัน": f"รวม {total_holidays:02d} วัน",
-        "รวม 8 วัน": f"รวม {total_holidays:02d} วัน",
-        "รวม00 วัน": f"รวม {total_holidays:02d} วัน",
-        "รวม 00 วัน": f"รวม {total_holidays:02d} วัน",
-        "รวม 0 วัน": f"รวม {total_holidays:02d} วัน"
+        "รวม 08 วัน": f"รวม {total_45:02d} วัน",
+        "รวม 8 วัน": f"รวม {total_45:02d} วัน",
+        "รวม00 วัน": f"รวม {total_45:02d} วัน",
+        "รวม 00 วัน": f"รวม {total_45:02d} วัน",
+        "รวม 0 วัน": f"รวม {total_45:02d} วัน"
     }
     
     for r in range(1, 55):
@@ -626,9 +623,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     if type(ws.cell(row=5, column=12)).__name__ != 'MergedCell': ws.cell(row=5, column=12).value = daily_rate
         
     start_row = 7
+    weekly_holiday_count = 0
+    public_holiday_count = 0
+    public_holidays_list = global_vars.get("public_holidays", [])
+    
     is_in_weekly_period = False
     
-    # 📌 3. ลงเวลาในตารางแต่ละวัน
     for day in range(1, 32):
         row = start_row + day
         ws.cell(row=row, column=1).value = str(day) 
@@ -642,7 +642,10 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
+        
+        # 📌 ระบบใหม่ ตรวจสอบช่วงวันหยุด (วงเล็บเปิด - ปิด)
         if "(" in shift_raw: is_in_weekly_period = True
+        
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
@@ -651,7 +654,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             
             if is_in_weekly_period and not is_public:
                 is_weekly = True
-            
+                
             if is_public or is_weekly:
                 t1_start, t1_end, t2_start, t2_end = None, None, None, None
                 if shift_clean == "ว": t1_start, t1_end = "06.00", "18.00"
@@ -673,23 +676,25 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 
                 if is_public:
                     ws.cell(row=row, column=2).value = "(วันหยุดนักขัตฤกษ์)"
-                else:
+                    public_holiday_count += 1
+                elif is_weekly:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
+                    weekly_holiday_count += 1
                     
+        # ถ้าเจอวงเล็บปิด แปลว่าจบช่วงวันหยุดประจำสัปดาห์แล้ว
         if ")" in shift_raw: is_in_weekly_period = False
                     
-    # 📌 4. รวบยอดจำนวนวันทั้งหมด ไปใส่ในแถวบนสุด (Row 39) แถวเดียว
-    ws.cell(row=39, column=8).value = total_holidays
+    # ล้าง 2 แถวแรกของยอดรวมทิ้งให้ว่างเปล่า
+    if type(ws.cell(row=39, column=8)).__name__ != 'MergedCell': ws.cell(row=39, column=8).value = None
+    if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell': ws.cell(row=40, column=8).value = None
     
-    # 📌 ล้างช่องด้านล่างทิ้ง เพื่อไม่ให้ซ้ำซ้อน
-    if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell':
-        ws.cell(row=40, column=8).value = None
-    if type(ws.cell(row=41, column=8)).__name__ != 'MergedCell':
-        ws.cell(row=41, column=8).value = None
+    # 📌 รวบยอดจำนวนวันทั้งหมด ไปใส่ในแถวบนสุด (Row 39)
+    total_days = weekly_holiday_count + public_holiday_count
+    ws.cell(row=39, column=8).value = total_days
     
     # 📌 สูตรบวกยอดรวมแถวล่างสุด
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
-        ws.cell(row=42, column=8).value = f"=SUM(H39:H41)"
+        ws.cell(row=42, column=8).value = total_days
     
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
