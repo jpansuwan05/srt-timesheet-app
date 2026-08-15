@@ -461,7 +461,6 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# 📌 ฟังก์ชันพระเอก! กวาดข้อมูลจากตารางมาคำนวณวันหยุดทั้งหมดให้อัตโนมัติ
 def extract_employee_stats(roster_row):
     weekly_days = []
     leave_days_vacation = []
@@ -472,13 +471,11 @@ def extract_employee_stats(roster_row):
         if "(" in val: is_in_period = True
         clean_val = val.replace("(", "").replace(")", "")
         
-        # วันหยุดประจำสัปดาห์ คือ ย หรือวันที่อยู่ในวงเล็บ (ที่ไม่ใช่วันลา)
         if clean_val in ['ย', 'ย.']:
             weekly_days.append(d)
         elif is_in_period and clean_val and clean_val not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
             weekly_days.append(d)
             
-        # วันหยุดพักผ่อน คือ พ
         if clean_val in ['พ', 'พ.']:
             leave_days_vacation.append(d)
             
@@ -534,7 +531,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     days_th_abbr = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."]
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
-    
     ph_append_str = ""
     if ph_dict_local:
         ph_texts = []
@@ -808,7 +804,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด (ย, พ, ป, ลา ฯลฯ)
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = False
@@ -1003,7 +998,7 @@ def generate_report_work(unique_key, roster_data, global_vars, num_days):
 # ==========================================
 with st.container(border=True):
     st.subheader("🖨️ 3. ส่งออกเอกสาร Excel สำเร็จรูป")
-    tab1, tab2 = st.tabs(["📄 ส่งออก 109 (ตารางเวรรวม)", "🧾 ส่งออกเอกสารรายบุคคล (177, 178, รายงาน)"])
+    tab1, tab2, tab3 = st.tabs(["📄 ส่งออก 109", "👤 ส่งออกรายบุคคล", "📦 ส่งออกแบบกลุ่ม (หลายคนพร้อมกัน)"])
 
     with tab1:
         st.markdown("**ตารางเวร 109 ของทั้งสถานี** (จัดหน้ากระดาษอัตโนมัติ)")
@@ -1015,11 +1010,10 @@ with st.container(border=True):
 
     with tab2:
         st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก**")
-        
         st.info("💡 **ตารางเวรคือ Master Data:** หากคุณต้องการเปลี่ยนช่วงวันหยุด หรือวันลาพักผ่อน กรุณาแก้ไขเครื่องหมาย `(` `)` `ย` หรือ `พ` ในตารางเวรด้านบน ระบบจะอัปเดตกล่องข้อความด้านล่าง และซิงค์ทุกเอกสารให้อัตโนมัติ 100% ครับ")
         
         active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
-        selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการสร้างเอกสาร", active_emp_options)
+        selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการสร้างเอกสาร", active_emp_options, key="single_select")
         
         if selected_key_177_display:
             sel_name = selected_key_177_display.split(" (")[0]
@@ -1035,7 +1029,6 @@ with st.container(border=True):
             emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
             roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
             
-            # 📌 สแกนตารางดึงข้อมูลทุกอย่างมาลงกล่องข้อความ (ผู้ใช้แก้ไขกล่องนี้ไม่ได้ ต้องไปแก้ที่ตารางเท่านั้น!)
             val_4_auto, val_5_auto, val_17_auto, val_9_auto, val_10_auto, val_11_auto, val_12_auto = extract_employee_stats(roster_dict)
 
             c1, c2, c3, c4 = st.columns(4)
@@ -1052,7 +1045,6 @@ with st.container(border=True):
                 val_6_manual = st.text_input("เดือนตัวย่อ [6]", value=default_ind.get('val_6', 'ส.ค.69'))
                 st.text_input("รวมพักผ่อน [12]", value=val_12_auto, disabled=True)
 
-            # จัดเตรียมข้อมูลส่งออกให้ตรงกับตัวแปรที่ใช้งาน
             export_ind = {
                 "val_4": val_4_auto, "val_5": val_5_auto, "val_17": val_17_auto,
                 "val_9": val_9_auto, "val_10": val_10_auto, "val_11": val_11_auto, "val_12": val_12_auto,
@@ -1062,10 +1054,8 @@ with st.container(border=True):
             local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps({"val_6": val_6_manual}), key=f"ls_ind_{uuid.uuid4().hex}")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            # --- ปุ่มดาวน์โหลดแยก ---
-            st.markdown("##### 📄 ดาวน์โหลดแยกทีละไฟล์")
             col_btn1, col_btn2, col_btn3 = st.columns(3)
+            
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
                     excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
@@ -1091,32 +1081,66 @@ with st.container(border=True):
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
 
-            # --- ปุ่มดาวน์โหลดรวม ZIP ---
-            st.markdown("---")
-            st.markdown("##### 📦 ดาวน์โหลดรวมทุกไฟล์ในคลิกเดียว (ZIP)")
-            if st.button(f"แพ็กรวมเอกสารของ {sel_name} (177, 178, รายงาน)", type="primary", use_container_width=True):
-                with st.spinner("กำลังแพ็กไฟล์..."):
+    with tab3:
+        st.markdown("**ดาวน์โหลดเอกสารของพนักงานหลายคนพร้อมกันในคลิกเดียว ระบบจะแยกไฟล์ใส่โฟลเดอร์ให้เป็นระเบียบ**")
+        
+        saved_ind_batch = local_storage.getItem(f"srt_ind_batch")
+        default_val_6 = "ส.ค.69"
+        try:
+            if saved_ind_batch: default_val_6 = json.loads(saved_ind_batch).get("val_6", "ส.ค.69")
+        except: pass
+        
+        batch_val_6 = st.text_input("เดือนตัวย่อ [6] (ใช้กับทุกคน)", value=default_val_6, key="batch_v6")
+        local_storage.setItem(f"srt_ind_batch", json.dumps({"val_6": batch_val_6}), key=f"ls_batch_{uuid.uuid4().hex}")
+        
+        all_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
+        
+        select_all = st.checkbox("เลือกพนักงานทั้งหมด", value=True)
+        if select_all:
+            selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options, default=all_emp_options)
+        else:
+            selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options)
+            
+        if st.button("📦 สร้างไฟล์ ZIP ส่งออกแบบกลุ่ม", type="primary", use_container_width=True):
+            if not selected_batch_emps:
+                st.warning("กรุณาเลือกพนักงานอย่างน้อย 1 คนครับ")
+            else:
+                with st.spinner(f"กำลังประมวลผลเอกสาร {len(selected_batch_emps)} รายการ..."):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
-                        if excel_177:
-                            zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
+                        for emp_display in selected_batch_emps:
+                            sel_name = emp_display.split(" (")[0]
+                            sel_role = emp_display.split(" (")[1].replace(")", "")
+                            unique_key = f"{sel_name}_{sel_role}"
                             
-                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
-                        if excel_178:
-                            zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
+                            emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
+                            roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
                             
-                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, num_days)
-                        if excel_work:
-                            zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
+                            val_4, val_5, val_17, val_9, val_10, val_11, val_12 = extract_employee_stats(roster_dict)
                             
-                    st.session_state[f"zip_export_{selected_key_177}"] = zip_buffer.getvalue()
-
-            if f"zip_export_{selected_key_177}" in st.session_state:
-                st.download_button(
-                    "📥 คลิกดาวน์โหลดไฟล์ ZIP ทั้งหมด",
-                    data=st.session_state[f"zip_export_{selected_key_177}"],
-                    file_name=f"เอกสารเบิกเงิน_{sel_name}.zip",
-                    mime="application/zip",
-                    use_container_width=True
-                )
+                            export_ind = {
+                                "val_4": val_4, "val_5": val_5, "val_17": val_17,
+                                "val_9": val_9, "val_10": val_10, "val_11": val_11, "val_12": val_12,
+                                "val_6": batch_val_6
+                            }
+                            
+                            excel_177 = generate_177(unique_key, roster_dict, global_data, export_ind, num_days)
+                            if excel_177: zip_file.writestr(f"ใบเบิก_177/177_{sel_name}.xlsx", excel_177.getvalue())
+                            
+                            excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
+                            if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
+                            
+                            excel_work = generate_report_work(unique_key, roster_dict, global_data, num_days)
+                            if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
+                            
+                    st.session_state["batch_zip_export"] = zip_buffer.getvalue()
+                    
+        if "batch_zip_export" in st.session_state:
+            st.success("✅ แพ็กไฟล์สำเร็จแล้ว! กดดาวน์โหลดด้านล่างได้เลยครับ")
+            st.download_button(
+                "📥 ดาวน์โหลดไฟล์ ZIP (รวมทุกเอกสาร แยกโฟลเดอร์ให้แล้ว)",
+                data=st.session_state["batch_zip_export"],
+                file_name=f"เอกสารเบิกเงิน_รฟท_{global_data['val_13']}.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
