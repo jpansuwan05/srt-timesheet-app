@@ -223,7 +223,6 @@ if 'roster_df' not in st.session_state:
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
-# ดึงข้อมูล Global Data มาเตรียมไว้ก่อน
 saved_global = local_storage.getItem("srt_global_data")
 default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}}
 try:
@@ -388,7 +387,23 @@ def parse_days_count(day_str):
             total += 1
     return total
 
-# 📌 อัปเดตฟังก์ชันดึงวันหยุด: ย = หยุดปกติ เข้ากล่อง [4], [5]
+# 📌 ฟังก์ชันดึงเลขวันในกล่องข้อความ มาตีเป็น Set() เพื่อให้ 178 ใช้งาน
+def parse_holiday_string_to_set(day_str):
+    holiday_set = set()
+    if not day_str or day_str == "-": return holiday_set
+    parts = str(day_str).split(",")
+    for p in parts:
+        p = p.strip()
+        if "-" in p:
+            try:
+                start, end = p.split("-")
+                for d in range(int(start), int(end) + 1):
+                    holiday_set.add(d)
+            except: pass
+        elif p.isdigit():
+            holiday_set.add(int(p))
+    return holiday_set
+
 def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
     weekly_days = []
     is_in_period = False
@@ -400,7 +415,6 @@ def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
         is_public = str(d) in ph_dict_current
         is_weekly = False
         
-        # ถ้ารหัสเป็น ย หรืออยู่ในวงเล็บ ถือว่าเป็นวันหยุด (เพื่อแสดงโชว์ในกล่อง [4], [5])
         if shift_clean in ["ย", "ย."]:
             is_weekly = True
         elif shift_clean and shift_clean not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
@@ -580,7 +594,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output
+    return output, total_pages
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
@@ -699,6 +713,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     ws = wb.active
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
+    
     total_45 = parse_days_count(ind_vars.get('val_4', '0')) + parse_days_count(ind_vars.get('val_5', '0'))
     
     replacements = {
@@ -735,7 +750,9 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     start_row = 7
     weekly_holiday_count = 0
     public_holiday_count = 0
-    is_in_weekly_period = False
+    
+    # 📌 ระบบใหม่ ให้ยึดจาก "กล่องข้อความ" [4] และ [5] เป็นหลัก (ไม่สนวงเล็บในตารางแล้ว)
+    manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_4', '0')) | parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
     for day in range(1, 32):
         row = start_row + day
@@ -750,16 +767,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
-        if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # 📌 ตัดวันลาพักผ่อน/หยุดทำงาน (ย, พ, ป, ลา) ออกจากใบเบิก 178
+        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
-            is_weekly = False
-            
-            if is_in_weekly_period and not is_public:
-                is_weekly = True
+            is_weekly = day in manual_weekly_holidays
                 
             if is_public or is_weekly:
                 t1_start, t1_end, t2_start, t2_end = None, None, None, None
@@ -789,8 +802,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 elif is_weekly:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
                     weekly_holiday_count += 1
-                    
-        if ")" in shift_raw: is_in_weekly_period = False
                     
     if type(ws.cell(row=39, column=8)).__name__ != 'MergedCell': ws.cell(row=39, column=8).value = None
     if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell': ws.cell(row=40, column=8).value = None
