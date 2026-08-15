@@ -9,12 +9,74 @@ import calendar
 import re
 import json
 import uuid
-import zipfile  # 📌 นำเข้าไลบรารีสำหรับสร้างไฟล์ ZIP
+import zipfile  
 from copy import copy
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wide")
+
+# ==========================================
+# ✨ เวทมนตร์ CSS แต่งหน้าตา Web App ให้ดู Modern
+# ==========================================
+st.markdown("""
+    <style>
+        /* 1. แต่งหน้าตาของการ์ด Dashboard (Metric) ให้มีเงาและขอบมน */
+        div[data-testid="metric-container"] {
+            background-color: #f8f9fa;
+            border-radius: 15px;
+            padding: 15px 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-left: 6px solid #FF4B4B;
+            transition: transform 0.2s ease;
+        }
+        div[data-testid="metric-container"]:hover {
+            transform: scale(1.02);
+        }
+        
+        /* 2. แต่งปุ่มกดให้โค้งมนและเด้งได้ตอนเอาเมาส์ชี้ */
+        div.stButton > button {
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        div.stButton > button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        /* 3. ปรับขอบโค้งมนให้กับ Container และ Expander */
+        div[data-testid="stVerticalBlock"] > div[style*="border"] {
+            border-radius: 15px !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
+            border: 1px solid #f0f2f6 !important;
+            padding: 20px !important;
+            background-color: #ffffff;
+        }
+        div[data-testid="stExpander"] {
+            border-radius: 10px !important;
+            border: 1px solid #e9ecef !important;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
+        }
+
+        /* 4. รองรับโหมดมืด (Dark Mode) */
+        @media (prefers-color-scheme: dark) {
+            div[data-testid="metric-container"] {
+                background-color: #262730;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            }
+            div[data-testid="stVerticalBlock"] > div[style*="border"] {
+                background-color: #0e1117;
+                border: 1px solid #333 !important;
+            }
+            div[data-testid="stExpander"] {
+                border: 1px solid #333 !important;
+            }
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
 
 # ==========================================
@@ -53,7 +115,7 @@ def load_roster_from_local():
 # 1. เมนูแถบด้านข้าง (Sidebar)
 # ==========================================
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/th/thumb/7/77/State_Railway_of_Thailand_logo.png/200px-State_Railway_of_Thailand_logo.png", width=100)
+    st.image("https://upload.wikimedia.org/wikipedia/th/thumb/7/77/State_Railway_of_Thailand_logo.png/200px-State_Railway_of_Thailand_logo.png", width=120)
     st.markdown("### 🔄 เริ่มต้นเดือนใหม่")
     if st.button("🗑️ ล้างข้อมูล (อัปโหลดรายชื่อใหม่)", type="primary", use_container_width=True):
         for key in list(st.session_state.keys()):
@@ -885,6 +947,7 @@ def generate_report_work(unique_key, roster_data, global_vars, num_days):
         "[13]": global_vars["val_13"],
         "[8]": global_vars["val_8"], 
         "[7]": global_vars["val_7"],
+        "[17]": ind_vars.get("val_17", ""),
     }
 
     for r in range(1, 55):
