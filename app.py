@@ -132,10 +132,13 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     elif "กั้นถนน" in p_clean: role = "อื่นๆ"
                     else: role = "อื่นๆ"
                     
+                    emp_id_raw = str(row.get("เลขประจำตัว", "-")) if pd.notna(row.get("เลขประจำตัว")) else "-"
+                    if emp_id_raw.endswith(".0"): emp_id_raw = emp_id_raw[:-2]
+                    
                     unique_key = f"{name}_{role}"
                     emp_dict[unique_key] = {
                         "ชื่อ-สกุล": name, "ตำแหน่ง": pos, 
-                        "เลขประจำตัว": str(row.get("เลขประจำตัว", "-")) if pd.notna(row.get("เลขประจำตัว")) else "-",
+                        "เลขประจำตัว": emp_id_raw,
                         "เงินเดือน": str(row.get("เงินเดือน", "-")) if pd.notna(row.get("เงินเดือน")) else "-", 
                         "เรท": float(row.get("เรท 1 ชั่วโมง", 0)) if pd.notna(row.get("เรท 1 ชั่วโมง")) else 0.0,
                         "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
@@ -222,9 +225,14 @@ if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.colu
 
 # ดึงข้อมูล Global Data มาเตรียมไว้ก่อน
 saved_global = local_storage.getItem("srt_global_data")
-default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays": []}
+default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}}
 try:
-    if saved_global: default_global.update(json.loads(saved_global))
+    if saved_global: 
+        parsed = json.loads(saved_global)
+        # เผื่อเวอร์ชันเก่าที่บันทึกเป็น List
+        if "public_holidays" in parsed and isinstance(parsed["public_holidays"], list):
+            parsed["public_holidays_dict"] = {str(k): "" for k in parsed["public_holidays"]}
+        default_global.update(parsed)
 except: pass
 
 months_list = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
@@ -254,14 +262,30 @@ with st.container(border=True):
     year_ce = year_be - 543
     first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    public_holidays = st.multiselect(
-        "🎉 เลือกวันที่เป็น 'วันหยุดนักขัตฤกษ์' ประจำเดือน (สำหรับใบ 178)", 
+    st.markdown("---")
+    st.markdown("##### 🎉 ตั้งค่าวันหยุดนักขัตฤกษ์ประจำเดือน")
+    
+    old_ph_dict = default_global.get("public_holidays_dict", {})
+    public_holidays_list = st.multiselect(
+        "1) เลือกวันที่ตรงกับ 'วันหยุดนักขัตฤกษ์' (ใบ 178 จะถือเป็นวันหยุดพิเศษ)", 
         list(range(1, num_days + 1)),
-        default=[d for d in default_global.get("public_holidays", []) if d <= num_days]
+        default=[int(k) for k in old_ph_dict.keys() if int(k) <= num_days]
     )
 
-    global_data = {"val_13": val_13, "year_be": year_be, "val_7": val_7, "val_8": val_8, "val_14": val_14, "public_holidays": public_holidays}
+    ph_dict = {}
+    if public_holidays_list:
+        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 178 และ 109)")
+        cols = st.columns(min(len(public_holidays_list), 4))
+        for i, d in enumerate(sorted(public_holidays_list)):
+            with cols[i % 4]:
+                old_name = old_ph_dict.get(str(d), "")
+                ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
+                ph_dict[str(d)] = ph_name
+
+    global_data = {
+        "val_13": val_13, "year_be": year_be, "val_7": val_7, 
+        "val_8": val_8, "val_14": val_14, "public_holidays_dict": ph_dict
+    }
     local_storage.setItem("srt_global_data", json.dumps(global_data), key=f"ls_global_{uuid.uuid4().hex}")
 
 # ==========================================
@@ -272,7 +296,7 @@ m1, m2, m3, m4 = st.columns(4)
 m1.metric("👥 จำนวนพนักงาน", f"{len(st.session_state.roster_df)} คน")
 m2.metric("🗓️ ประจำเดือน", f"{val_13} {year_be}")
 m3.metric("📅 จำนวนวันในเดือนนี้", f"{num_days} วัน")
-m4.metric("🎉 วันหยุดนักขัตฤกษ์", f"{len(public_holidays)} วัน")
+m4.metric("🎉 วันหยุดนักขัตฤกษ์", f"{len(ph_dict)} วัน")
 st.markdown("---")
 
 with st.container(border=True):
@@ -350,21 +374,43 @@ with st.container(border=True):
 # 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, 178, และรายงานปฏิบัติงาน)
 # ==========================================
 
-# ฟังก์ชันผู้ช่วยคำนวณจำนวนวันจากการพิมพ์แบบขีด (เช่น "13-14", "8-11")
-def parse_days_count(day_str):
-    total = 0
-    if not day_str or day_str == "-": return 0
-    parts = str(day_str).split(",")
-    for p in parts:
-        p = p.strip()
-        if "-" in p:
-            try:
-                start, end = p.split("-")
-                total += (int(end) - int(start)) + 1
-            except: pass
-        elif p.isdigit():
-            total += 1
-    return total
+# ฟังก์ชันดึงวันหยุดจากตารางอัตโนมัติ เพื่อนำไปแปลงเป็น "8-11", "13-14"
+def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
+    weekly_days = []
+    is_in_period = False
+    for d in range(1, num_days_in_month + 1):
+        shift_raw = str(roster_data.get(str(d), "")).strip()
+        if "(" in shift_raw: is_in_period = True
+        shift_clean = shift_raw.replace("(", "").replace(")", "")
+        
+        is_public = str(d) in ph_dict_current
+        is_weekly = False
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
+            if is_in_period and not is_public:
+                is_weekly = True
+            
+            if is_weekly:
+                weekly_days.append(d)
+                
+        if ")" in shift_raw: is_in_period = False
+        
+    if not weekly_days: return "-", "-"
+    
+    ranges = []
+    start = weekly_days[0]
+    prev = weekly_days[0]
+    for d in weekly_days[1:]:
+        if d == prev + 1:
+            prev = d
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = d
+            prev = d
+    ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+    
+    v4 = ranges[0] if len(ranges) > 0 else "-"
+    v5 = ",".join(ranges[1:]) if len(ranges) > 1 else "-"
+    return v4, v5
 
 def generate_109(global_vars, roster_df, num_days, first_weekday):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
@@ -387,6 +433,8 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
         worksheets.append(new_ws)
     replacements_109 = {"[14]": global_vars["val_14"], "[13]": global_vars["val_13"], "[8]": global_vars["val_8"], "[7]": global_vars["val_7"]}
     days_th_abbr = ["จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา."]
+    
+    ph_dict_local = global_vars.get("public_holidays_dict", {})
     
     for page_idx, ws in enumerate(worksheets):
         page_num = page_idx + 1
@@ -468,6 +516,15 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                 
             current_excel_row += 2
             
+        # 📌 เขียนชื่อวันหยุดนักขัตฤกษ์ลงด้านล่างสุดของใบ 109
+        if ph_dict_local:
+            ph_texts = []
+            for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
+                ph_texts.append(f"วันที่ {d_str} {name}" if name else f"วันที่ {d_str}")
+            ph_full_str = "หมายเหตุวันหยุดนักขัตฤกษ์: " + ", ".join(ph_texts)
+            ws.cell(row=38, column=2).value = ph_full_str
+            ws.cell(row=38, column=2).font = Font(color="FF0000", size=14, bold=True, name="TH SarabunPSK")
+            
         if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0 
@@ -475,11 +532,14 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output
+    return output, total_pages
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
+    
+    emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
+    if emp_id_str.endswith(".0"): emp_id_str = emp_id_str[:-2]
     
     raw_salary = str(emp_info.get('เงินเดือน', '-'))
     if raw_salary != "-" and raw_salary.replace('.', '', 1).isdigit():
@@ -497,7 +557,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
         "[8]": global_vars["val_8"], "[7]": global_vars["val_7"], "[6]": ind_vars["val_6"],
         "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
         "[3]": salary_str,  
-        "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"]
+        "[2]": emp_id_str, "[1]": emp_info["ตำแหน่ง"]
     }
     for r in range(1, 55):
         for c in range(1, 40): 
@@ -577,6 +637,9 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
+    emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
+    if emp_id_str.endswith(".0"): emp_id_str = emp_id_str[:-2]
+    
     raw_salary = str(emp_info.get('เงินเดือน', '-'))
     if raw_salary != "-" and raw_salary.replace('.', '', 1).isdigit():
         salary_str = f"{float(raw_salary):,.0f}"
@@ -587,8 +650,26 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
-    # 📌 คำนวณยอดรวมของ [4] และ [5] จากการพิมพ์แบบช่วงวันที่ เช่น "13-14", "8-11"
-    total_45 = parse_days_count(ind_vars.get('val_4', '0')) + parse_days_count(ind_vars.get('val_5', '0'))
+    ph_dict_local = global_vars.get("public_holidays_dict", {})
+    
+    # 📌 นับยอดวันหยุดทั้งหมดล่วงหน้าเพื่อเตรียมข้อความ "รวม xx วัน"
+    total_holidays = 0
+    is_in_weekly_period = False
+    
+    for day in range(1, num_days + 1):
+        shift_raw = str(roster_data.get(str(day), "")).strip()
+        if "(" in shift_raw: is_in_weekly_period = True
+        shift_clean = shift_raw.replace("(", "").replace(")", "")
+        
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
+            is_public = str(day) in ph_dict_local
+            is_weekly = False
+            if is_in_weekly_period and not is_public:
+                is_weekly = True
+            if is_public or is_weekly:
+                total_holidays += 1
+                
+        if ")" in shift_raw: is_in_weekly_period = False
     
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
@@ -597,12 +678,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         "[12]": ind_vars["val_12"], "[11]": ind_vars["val_11"], "[10]": ind_vars["val_10"], "[9]": ind_vars["val_9"],
         "[6]": ind_vars["val_6"], "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
         "[3]": salary_str,  
-        "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"],
-        "รวม 08 วัน": f"รวม {total_45:02d} วัน",
-        "รวม 8 วัน": f"รวม {total_45:02d} วัน",
-        "รวม00 วัน": f"รวม {total_45:02d} วัน",
-        "รวม 00 วัน": f"รวม {total_45:02d} วัน",
-        "รวม 0 วัน": f"รวม {total_45:02d} วัน"
+        "[2]": emp_id_str, "[1]": emp_info["ตำแหน่ง"],
+        "รวม 08 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม 8 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม00 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม 00 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม 0 วัน": f"รวม {total_holidays:02d} วัน"
     }
     
     for r in range(1, 55):
@@ -625,8 +706,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     start_row = 7
     weekly_holiday_count = 0
     public_holiday_count = 0
-    public_holidays_list = global_vars.get("public_holidays", [])
-    
     is_in_weekly_period = False
     
     for day in range(1, 32):
@@ -643,13 +722,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
         
-        # 📌 ระบบใหม่ ตรวจสอบช่วงวันหยุด (วงเล็บเปิด - ปิด)
         if "(" in shift_raw: is_in_weekly_period = True
         
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
-            is_public = day in public_holidays_list
+            is_public = str(day) in ph_dict_local
             is_weekly = False
             
             if is_in_weekly_period and not is_public:
@@ -675,26 +753,35 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
-                    ws.cell(row=row, column=2).value = "(วันหยุดนักขัตฤกษ์)"
+                    # 📌 ดึงชื่อวันหยุดมาใส่
+                    h_name = ph_dict_local.get(str(day), "วันหยุดนักขัตฤกษ์")
+                    if not h_name.strip(): h_name = "วันหยุดนักขัตฤกษ์"
+                    ws.cell(row=row, column=2).value = f"({h_name})"
                     public_holiday_count += 1
                 elif is_weekly:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
                     weekly_holiday_count += 1
                     
-        # ถ้าเจอวงเล็บปิด แปลว่าจบช่วงวันหยุดประจำสัปดาห์แล้ว
         if ")" in shift_raw: is_in_weekly_period = False
                     
-    # ล้าง 2 แถวแรกของยอดรวมทิ้งให้ว่างเปล่า
     if type(ws.cell(row=39, column=8)).__name__ != 'MergedCell': ws.cell(row=39, column=8).value = None
     if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell': ws.cell(row=40, column=8).value = None
     
-    # 📌 รวบยอดจำนวนวันทั้งหมด ไปใส่ในแถวบนสุด (Row 39)
-    total_days = weekly_holiday_count + public_holiday_count
-    ws.cell(row=39, column=8).value = total_days
+    total_days_final = weekly_holiday_count + public_holiday_count
+    ws.cell(row=39, column=8).value = total_days_final
     
-    # 📌 สูตรบวกยอดรวมแถวล่างสุด
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
-        ws.cell(row=42, column=8).value = total_days
+        ws.cell(row=42, column=8).value = total_days_final
+        
+    # 📌 จัดเรียงข้อความ วันหยุดนักขัตฤกษ์ ในหมายเหตุ (คอลัมน์ K แถว 40)
+    if type(ws.cell(row=40, column=11)).__name__ != 'MergedCell':
+        if ph_dict_local:
+            ph_texts = []
+            for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
+                ph_texts.append(f"วันที่ {d_str} {name}" if name else f"{d_str}")
+            ws.cell(row=40, column=11).value = f"วันหยุดนักขัตฤกษ์ ({', '.join(ph_texts)})"
+        else:
+            ws.cell(row=40, column=11).value = "วันหยุดนักขัตฤกษ์"
     
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -709,6 +796,9 @@ def generate_report_work(unique_key, roster_data, global_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
+    emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
+    if emp_id_str.endswith(".0"): emp_id_str = emp_id_str[:-2]
+    
     raw_salary = str(emp_info.get('เงินเดือน', '-'))
     if raw_salary != "-" and raw_salary.replace('.', '', 1).isdigit():
         salary_str = f"{float(raw_salary):,.0f}"
@@ -722,7 +812,7 @@ def generate_report_work(unique_key, roster_data, global_vars, num_days):
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"],
         "[1]": emp_info["ตำแหน่ง"],
-        "[2]": emp_info["เลขประจำตัว"],
+        "[2]": emp_id_str,
         "[3]": salary_str,
         "[14]": global_vars["val_14"],
         "[13]": global_vars["val_13"],
@@ -866,13 +956,19 @@ with st.container(border=True):
             try:
                 if saved_ind: default_ind.update(json.loads(saved_ind))
             except: pass
+            
+            # 📌 ดึงวันที่ตาราง มาสร้างเป็น default ให้กล่อง [4] และ [5]
+            emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
+            roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
+            val_4_auto, val_5_auto = get_auto_holiday_ranges(roster_dict, num_days, global_data.get("public_holidays_dict", {}))
 
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                default_ind['val_4'] = st.text_input("วันหยุด [4]", default_ind['val_4'])
+                # 📌 กล่องนี้จะพิมพ์ให้อัตโนมัติตามตารางเลยครับ
+                default_ind['val_4'] = st.text_input("วันหยุด [4] (ตรวจจับอัตโนมัติ)", value=val_4_auto)
                 default_ind['val_9'] = st.text_input("หยุดพักผ่อน [9]", default_ind['val_9'])
             with c2:
-                default_ind['val_5'] = st.text_input("วันหยุดที่เบิกได้ [5]", default_ind['val_5'])
+                default_ind['val_5'] = st.text_input("วันหยุด [5] (ตรวจจับอัตโนมัติ)", value=val_5_auto)
                 default_ind['val_10'] = st.text_input("พักผ่อนตั้งแต่ [10]", default_ind['val_10'])
             with c3:
                 default_ind['val_6'] = st.text_input("เดือนตัวย่อ [6]", default_ind['val_6'])
@@ -887,9 +983,6 @@ with st.container(border=True):
             
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", type="primary", use_container_width=True):
-                    emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
-                    roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
-                    
                     excel_177 = generate_177(selected_key_177, roster_dict, global_data, default_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
@@ -897,9 +990,6 @@ with st.container(border=True):
                         
             with col_btn2:
                 if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", type="primary", use_container_width=True):
-                    emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
-                    roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
-                    
                     excel_178 = generate_178(selected_key_177, roster_dict, global_data, default_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
@@ -909,9 +999,6 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", type="primary", use_container_width=True):
-                    emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
-                    roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
-                    
                     excel_work = generate_report_work(selected_key_177, roster_dict, global_data, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
