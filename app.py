@@ -172,6 +172,7 @@ shift_data = {
     "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
 }
+# ทุกรหัสที่ไม่ใช่การทำงาน จะอยู่ในหมวดลา/หยุดพักทั้งหมด
 leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
@@ -370,7 +371,7 @@ with st.container(border=True):
             st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
 
 # ==========================================
-# 5. ฟังก์ชันสร้างไฟล์ Excel (109, 177, 178, และรายงานปฏิบัติงาน)
+# 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
 def parse_days_count(day_str):
@@ -388,7 +389,6 @@ def parse_days_count(day_str):
             total += 1
     return total
 
-# 📌 อัปเดตฟังก์ชันดึงวันหยุด: ย = หยุดปกติ เข้ากล่อง [4], [5]
 def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
     weekly_days = []
     is_in_period = False
@@ -400,15 +400,14 @@ def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
         is_public = str(d) in ph_dict_current
         is_weekly = False
         
-        # ถ้ารหัสเป็น ย หรืออยู่ในวงเล็บ ถือว่าเป็นวันหยุด (ที่ไม่ใช่วันนักขัตฤกษ์)
-        if shift_clean in ["ย", "ย."]:
-            is_weekly = True
-        elif shift_clean and shift_clean not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
+        # วันที่จะได้นับเป็นวันหยุดเพื่อเบิก 178 ต้อง:
+        # ไม่ใช่รหัสลางาน (ต้องมาทำงานจริงๆ)
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             if is_in_period and not is_public:
                 is_weekly = True
-                
-        if is_weekly and not is_public:
-            weekly_days.append(d)
+            
+            if is_weekly:
+                weekly_days.append(d)
                 
         if ")" in shift_raw: is_in_period = False
         
@@ -430,12 +429,12 @@ def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
     v5 = ",".join(ranges[1:]) if len(ranges) > 1 else "-"
     return v4, v5
 
-# 📌 อัปเดตฟังก์ชันดึงวันลา: พ = พักผ่อน เข้ากล่อง [9], [10], [11]
 def get_auto_leave_ranges(roster_data, num_days_in_month):
     leave_days = []
     for d in range(1, num_days_in_month + 1):
         shift_raw = str(roster_data.get(str(d), "")).strip()
         shift_clean = shift_raw.replace("(", "").replace(")", "")
+        # รองรับทั้งรหัส "พ" และ "พ." สำหรับหยุดพักผ่อน
         if shift_clean in ["พ", "พ."]:
             leave_days.append(d)
             
@@ -700,7 +699,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     ws = wb.active
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
-    
     total_45 = parse_days_count(ind_vars.get('val_4', '0')) + parse_days_count(ind_vars.get('val_5', '0'))
     
     replacements = {
@@ -723,7 +721,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                     if k in new_val:
                         new_val = new_val.replace(k, str(v))
                 
-                # Regex ค้นหาคำว่า รวม ตามด้วยตัวเลข แล้วเปลี่ยนให้เป๊ะ
                 if "รวม" in new_val and "วัน" in new_val:
                     new_val = re.sub(r'รวม\s*\d+\s*วัน', f'รวม {total_45:02d} วัน', new_val)
                 
@@ -756,13 +753,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        if shift_clean and shift_clean not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
+        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด (ย, พ, ป, ลา ฯลฯ)
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = False
             
-            if shift_clean in ["ย", "ย."]:
-                is_weekly = True
-            elif is_in_weekly_period and not is_public:
+            if is_in_weekly_period and not is_public:
                 is_weekly = True
                 
             if is_public or is_weekly:
@@ -785,9 +781,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
-                    h_name = ph_dict_local.get(str(day), "วันหยุดนักขัตฤกษ์")
-                    if not h_name.strip(): h_name = "วันหยุดนักขัตฤกษ์"
-                    ws.cell(row=row, column=2).value = f"({h_name})"
+                    ws.cell(row=row, column=2).value = f"(วันหยุดนักขัตฤกษ์)"
                     public_holiday_count += 1
                 elif is_weekly:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
