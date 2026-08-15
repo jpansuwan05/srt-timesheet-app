@@ -223,7 +223,6 @@ if 'roster_df' not in st.session_state:
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
-# ดึงข้อมูล Global Data มาเตรียมไว้ก่อน
 saved_global = local_storage.getItem("srt_global_data")
 default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}}
 try:
@@ -273,7 +272,7 @@ with st.container(border=True):
 
     ph_dict = {}
     if public_holidays_list:
-        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109 และคอลัมน์ด้านซ้ายของ 178)")
+        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109 และ 178)")
         cols = st.columns(min(len(public_holidays_list), 4))
         for i, d in enumerate(sorted(public_holidays_list)):
             with cols[i % 4]:
@@ -404,7 +403,6 @@ def parse_holiday_string_to_set(day_str):
             holiday_set.add(int(p))
     return holiday_set
 
-# 📌 ฟังก์ชันดึงวันหยุด (รวม ย ด้วยเพื่อให้ลงกล่องข้อความถูกต้อง)
 def get_auto_holiday_ranges(roster_data, num_days_in_month, ph_dict_current):
     weekly_days = []
     is_in_period = False
@@ -500,6 +498,14 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
     
+    # 📌 จัดเตรียมข้อความชื่อวันหยุดนักขัตฤกษ์เพื่อเอาไปต่อท้ายในใบ 109
+    ph_append_str = ""
+    if ph_dict_local:
+        ph_texts = []
+        for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
+            ph_texts.append(f"วันที่ {d_str} {name}" if name else f"วันที่ {d_str}")
+        ph_append_str = " (" + " , ".join(ph_texts) + ")"
+
     for page_idx, ws in enumerate(worksheets):
         page_num = page_idx + 1
         page_data = pages[page_idx]
@@ -512,14 +518,27 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                     for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
                     if "หน้า" in new_val and "/" in new_val: new_val = re.sub(r'หน้า\s*\d+\s*/\s*\d+', f'หน้า {page_num}/{total_pages}', new_val)
                     if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
-        for r in range(39, 55):
+                    
+        # 📌 กวาดหาคำว่า "วันหยุดนักขัตฤกษ์" ในส่วนท้ายกระดาษ แล้วนำข้อความวันหยุดไปต่อท้าย
+        for r in range(35, 55):
             for c in range(1, 40):
                 c_cell = ws.cell(row=r, column=c)
                 val = c_cell.value
-                if val and isinstance(val, str) and "[" in val:
+                if val and isinstance(val, str):
                     new_val = val
-                    for k, v in replacements_109.items(): new_val = new_val.replace(k, str(v))
-                    if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
+                    
+                    # แทนที่ตัวแปรพื้นฐาน
+                    for k, v in replacements_109.items(): 
+                        if k in new_val:
+                            new_val = new_val.replace(k, str(v))
+                    
+                    # หาคำว่า วันหยุดนักขัตฤกษ์ แล้วต่อท้าย (ถ้ายังไม่มีวงเล็บวันที่ต่อท้ายอยู่)
+                    if "วันหยุดนักขัตฤกษ์" in new_val and ph_append_str:
+                        if ph_append_str not in new_val:
+                            new_val = new_val.replace("วันหยุดนักขัตฤกษ์", f"วันหยุดนักขัตฤกษ์{ph_append_str}")
+                            
+                    if type(c_cell).__name__ != 'MergedCell': 
+                        c_cell.value = new_val
         
         date_row = None
         for r in range(4, 10):
@@ -579,14 +598,6 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
                         c_cell.font = nf
                 
             current_excel_row += 2
-            
-        if ph_dict_local:
-            ph_texts = []
-            for d_str, name in sorted(ph_dict_local.items(), key=lambda x: int(x[0])):
-                ph_texts.append(f"วันที่ {d_str} {name}" if name else f"วันที่ {d_str}")
-            ph_full_str = "หมายเหตุวันหยุดนักขัตฤกษ์: " + ", ".join(ph_texts)
-            ws.cell(row=38, column=2).value = ph_full_str
-            ws.cell(row=38, column=2).font = Font(color="FF0000", size=14, bold=True, name="TH SarabunPSK")
             
         if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
         ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -750,7 +761,8 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     start_row = 7
     weekly_holiday_count = 0
     public_holiday_count = 0
-    is_in_weekly_period = False
+    
+    manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_4', '0')) | parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
     for day in range(1, 32):
         row = start_row + day
@@ -765,16 +777,12 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
-        if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด (ย, พ, ป, ลา ฯลฯ)
+        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
-            is_weekly = False
-            
-            if is_in_weekly_period and not is_public:
-                is_weekly = True
+            is_weekly = day in manual_weekly_holidays
                 
             if is_public or is_weekly:
                 t1_start, t1_end, t2_start, t2_end = None, None, None, None
@@ -803,8 +811,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 elif is_weekly:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
                     weekly_holiday_count += 1
-                    
-        if ")" in shift_raw: is_in_weekly_period = False
                     
     if type(ws.cell(row=39, column=8)).__name__ != 'MergedCell': ws.cell(row=39, column=8).value = None
     if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell': ws.cell(row=40, column=8).value = None
@@ -976,7 +982,7 @@ with st.container(border=True):
     with tab2:
         st.markdown("**ข้อมูลเฉพาะบุคคลสำหรับใบเบิก**")
         
-        st.info("💡 **เคล็ดลับการซิงค์อัตโนมัติ:** หากต้องการเปลี่ยนแปลงวันหยุด ให้แก้ไขที่ **ตารางเวรด้านบน** (เช่น พิมพ์ `(` หรือ `)` หรือ `ย`) ระบบจะอัปเดตข้อมูลกล่องข้อความด้านล่างให้ตรงกันอัตโนมัติครับ!")
+        st.info("💡 **เคล็ดลับการทำงาน:** ตารางเวรด้านบนคือตารางหลัก หากต้องการเปลี่ยนแปลงวันหยุด ให้แก้ไขวงเล็บ `(` หรือ `)` ในตารางด้านบน ระบบจะอัปเดตตัวเลขในกล่องข้อความให้อัตโนมัติครับ")
         
         active_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
         selected_key_177_display = st.selectbox("เลือกพนักงานที่ต้องการสร้างเอกสาร", active_emp_options)
