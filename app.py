@@ -223,6 +223,7 @@ if 'roster_df' not in st.session_state:
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
+# ดึงข้อมูล Global Data มาเตรียมไว้ก่อน
 saved_global = local_storage.getItem("srt_global_data")
 default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}}
 try:
@@ -272,7 +273,7 @@ with st.container(border=True):
 
     ph_dict = {}
     if public_holidays_list:
-        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109 และ 178)")
+        st.markdown("2) โปรดระบุชื่อวันหยุดนักขัตฤกษ์ (เพื่อแสดงในใบ 109 และคอลัมน์ด้านซ้ายของ 178)")
         cols = st.columns(min(len(public_holidays_list), 4))
         for i, d in enumerate(sorted(public_holidays_list)):
             with cols[i % 4]:
@@ -387,7 +388,6 @@ def parse_days_count(day_str):
             total += 1
     return total
 
-# 📌 ฟังก์ชันดึงเลขวันในกล่องข้อความ มาตีเป็น Set() เพื่อให้ 178 ใช้งาน
 def parse_holiday_string_to_set(day_str):
     holiday_set = set()
     if not day_str or day_str == "-": return holiday_set
@@ -474,6 +474,81 @@ def get_auto_leave_ranges(roster_data, num_days_in_month):
     val_12 = str(total_leave)
     
     return val_9, val_10, val_11, val_12
+
+# 📌 ฟังก์ชันจัดการอัปเดตตารางเวร 2 ทาง (Two-Way Binding)
+def sync_roster_from_textboxes(roster_df, sel_name, sel_role, v4, v5, v9):
+    idx = roster_df[(roster_df['ชื่อ-สกุล'] == sel_name) & (roster_df['Role (หน้าที่)'] == sel_role)].index
+    if len(idx) == 0: return False
+    idx = idx[0]
+    
+    changed = False
+    row = roster_df.iloc[idx].copy()
+    
+    # ล้างวงเล็บออกให้หมดก่อน
+    for d in range(1, 32):
+        d_str = str(d)
+        if d_str in row:
+            val = str(row[d_str]).strip()
+            new_val = val.replace("(", "").replace(")", "")
+            # เปลี่ยน ย กลับเป็นเวรว่างๆ ก่อนเผื่อลบ
+            if new_val in ["ย", "ย.", "พ", "พ."]: new_val = ""
+            if val != new_val:
+                row[d_str] = new_val
+                changed = True
+                
+    # ฟังก์ชันช่วยลงวงเล็บหรือเปลี่ยนเป็น ย, พ
+    def apply_leave(val_str, mode="paren"):
+        nonlocal changed, row
+        if not val_str or val_str == "-": return
+        parts = str(val_str).split(",")
+        for p in parts:
+            p = p.strip()
+            if "-" in p:
+                try:
+                    s_day, e_day = p.split("-")
+                    s_day, e_day = str(int(s_day)), str(int(e_day))
+                    if mode == "paren":
+                        if s_day in row:
+                            v = str(row[s_day])
+                            if not v: v = "ว" # ถ้าว่าง ให้ถือว่าเป็น ว 
+                            if not v.startswith("("): row[s_day] = "(" + v; changed = True
+                        if e_day in row:
+                            v = str(row[e_day])
+                            if not v: v = "ว"
+                            if not v.endswith(")"): row[e_day] = v + ")"; changed = True
+                    else:
+                        for d in range(int(s_day), int(e_day) + 1):
+                            if str(d) in row: row[str(d)] = mode; changed = True
+                except: pass
+            elif p.isdigit():
+                d_str = str(int(p))
+                if d_str in row:
+                    if mode == "paren":
+                        v = str(row[d_str])
+                        if not v: v = "ว"
+                        new_v = "(" + v + ")"
+                        if v != new_v: row[d_str] = new_v; changed = True
+                    else:
+                        row[d_str] = mode; changed = True
+                        
+    # อัปเดตตารางกลับไปตามที่พิมพ์
+    apply_parens_set = parse_holiday_string_to_set(v4) | parse_holiday_string_to_set(v5)
+    
+    # กรณีวงเล็บวันหยุดประจำสัปดาห์
+    for d in sorted(list(apply_parens_set)):
+        d_str = str(d)
+        if d_str in row:
+            if d == min(apply_parens_set):
+                v = str(row[d_str]); row[d_str] = f"({v}" if v else "(ว"; changed = True
+            elif d == max(apply_parens_set):
+                v = str(row[d_str]); row[d_str] = f"{v})" if v else "ว)"; changed = True
+    
+    # กรณีลาพักผ่อน
+    apply_leave(v9, mode="พ")
+    
+    if changed:
+        roster_df.iloc[idx] = row
+    return changed
 
 def generate_109(global_vars, roster_df, num_days, first_weekday):
     try: wb = openpyxl.load_workbook("109เปล่า.xlsx")
@@ -594,7 +669,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output, total_pages
+    return output
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
@@ -751,7 +826,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     weekly_holiday_count = 0
     public_holiday_count = 0
     
-    # 📌 ระบบใหม่ ให้ยึดจาก "กล่องข้อความ" [4] และ [5] เป็นหลัก (ไม่สนวงเล็บในตารางแล้ว)
+    # ยึดถือวันหยุดประจำสัปดาห์จากกล่องข้อความ [4] และ [5] เป็นหลัก
     manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_4', '0')) | parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
     for day in range(1, 32):
@@ -769,7 +844,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         shift_raw = str(roster_data.get(str(day), "")).strip()
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด
+        # 📌 ตัดพวกที่ลาหยุด/ไม่ได้ทำงานจริงๆ ออกจาก 178 อย่างเด็ดขาด (ย, พ, ป, ลา ฯลฯ)
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = day in manual_weekly_holidays
@@ -794,7 +869,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
-                    # 📌 ใส่ชื่อวันหยุดนักขัตฤกษ์ลงในคอลัมน์ซ้าย
+                    # 📌 แสดงชื่อวันหยุดนักขัตฤกษ์ในคอลัมน์ซ้าย
                     h_name = ph_dict_local.get(str(day), "วันหยุดนักขัตฤกษ์")
                     if not h_name.strip(): h_name = "วันหยุดนักขัตฤกษ์"
                     ws.cell(row=row, column=2).value = f"({h_name})"
@@ -1006,6 +1081,21 @@ with st.container(border=True):
                 default_ind['val_12'] = st.text_input("รวมพักผ่อน [12] (ตรวจจับอัตโนมัติ)", value=val_12_auto)
 
             local_storage.setItem(f"srt_ind_{selected_key_177}", json.dumps(default_ind), key=f"ls_ind_{uuid.uuid4().hex}")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 📌 ปุ่มใหม่! ซิงค์ข้อมูลจากกล่องข้อความกลับไปที่ตารางเวรหลัก
+            if st.button("🔄 ซิงค์ข้อมูลที่แก้กลับไปที่ตารางเวร", type="secondary", use_container_width=True):
+                is_changed = sync_roster_from_textboxes(
+                    st.session_state.roster_df, sel_name, sel_role, 
+                    default_ind['val_4'], default_ind['val_5'], default_ind['val_9']
+                )
+                if is_changed:
+                    save_roster_to_local(st.session_state.roster_df)
+                    st.success("✅ อัปเดตตารางเวรสำเร็จ! (โปรดตรวจสอบตารางด้านบน)")
+                    st.rerun()
+                else:
+                    st.info("ไม่มีการเปลี่ยนแปลง หรือรูปแบบที่กรอกไม่ถูกต้องครับ")
 
             st.markdown("<br>", unsafe_allow_html=True)
             col_btn1, col_btn2, col_btn3 = st.columns(3)
