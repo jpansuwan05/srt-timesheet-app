@@ -458,7 +458,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output
+    return output, total_pages
 
 def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
@@ -556,6 +556,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
+# 📌 อัปเดต 178 ให้จัดการวงเล็บช่วงวันหยุด และรวบยอดไว้ในแถวเดียว
 def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
@@ -570,17 +571,28 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
-    # 📌 คำนวณยอดรวมของ [4] และ [5] เพื่อนำไปใช้แทนที่ในช่องรวม 08 วัน
-    total_45 = 0
-    try:
-        val_4_num = int(ind_vars.get('val_4', '0')) if str(ind_vars.get('val_4', '0')).isdigit() else 0
-        total_45 += val_4_num
-    except: pass
-    try:
-        val_5_num = int(ind_vars.get('val_5', '0')) if str(ind_vars.get('val_5', '0')).isdigit() else 0
-        total_45 += val_5_num
-    except: pass
+    # 📌 1. นำร่องนับยอดจำนวนวันหยุดทั้งหมดล่วงหน้า (เพื่อให้เอาเลขไปใส่ในข้อความ "รวม xx วัน" ได้พอดี)
+    total_holidays = 0
+    is_in_weekly_period = False
+    public_holidays_list = global_vars.get("public_holidays", [])
     
+    for day in range(1, num_days + 1):
+        shift_raw = str(roster_data.get(str(day), "")).strip()
+        if "(" in shift_raw: is_in_weekly_period = True
+        shift_clean = shift_raw.replace("(", "").replace(")", "")
+        
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
+            is_public = day in public_holidays_list
+            is_weekly = False
+            if is_in_weekly_period and not is_public:
+                is_weekly = True
+            
+            if is_public or is_weekly:
+                total_holidays += 1
+                
+        if ")" in shift_raw: is_in_weekly_period = False
+    
+    # 📌 2. นำ total_holidays ไปแทรกแทนที่ข้อความ "รวม 00 วัน" 
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info["รหัสบัญชี"], "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"],
@@ -589,10 +601,11 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
         "[6]": ind_vars["val_6"], "[5]": ind_vars["val_5"], "[4]": ind_vars["val_4"],
         "[3]": salary_str,  
         "[2]": emp_info["เลขประจำตัว"], "[1]": emp_info["ตำแหน่ง"],
-        "รวม 08 วัน": f"รวม {total_45:02d} วัน",
-        "รวม 8 วัน": f"รวม {total_45:02d} วัน",
-        "รวม00 วัน": f"รวม{total_45:02d} วัน",
-        "รวม 00 วัน": f"รวม {total_45:02d} วัน"
+        "รวม 08 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม 8 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม00 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม 00 วัน": f"รวม {total_holidays:02d} วัน",
+        "รวม 0 วัน": f"รวม {total_holidays:02d} วัน"
     }
     
     for r in range(1, 55):
@@ -613,13 +626,9 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     if type(ws.cell(row=5, column=12)).__name__ != 'MergedCell': ws.cell(row=5, column=12).value = daily_rate
         
     start_row = 7
-    weekly_holiday_count = 0
-    public_holiday_count = 0
-    public_holidays_list = global_vars.get("public_holidays", [])
-    
-    # 📌 ระบบใหม่ ตรวจสอบช่วงวันหยุด (วงเล็บเปิด - ปิด)
     is_in_weekly_period = False
     
+    # 📌 3. ลงเวลาในตารางแต่ละวัน
     for day in range(1, 32):
         row = start_row + day
         ws.cell(row=row, column=1).value = str(day) 
@@ -633,20 +642,16 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
-        
-        # ตรวจเช็กว่านี่คือจุดเริ่มต้น หรืออยู่ในช่วงของวันหยุดประจำสัปดาห์หรือไม่
         if "(" in shift_raw: is_in_weekly_period = True
-        
-        # ถอดวงเล็บออกเพื่อไปหาชั่วโมงเข้าออกปกติ
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        is_public = day in public_holidays_list
-        is_weekly = False
-        
-        if shift_clean and shift_clean != "-":
+        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
+            is_public = day in public_holidays_list
+            is_weekly = False
+            
             if is_in_weekly_period and not is_public:
                 is_weekly = True
-                
+            
             if is_public or is_weekly:
                 t1_start, t1_end, t2_start, t2_end = None, None, None, None
                 if shift_clean == "ว": t1_start, t1_end = "06.00", "18.00"
@@ -668,17 +673,21 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 
                 if is_public:
                     ws.cell(row=row, column=2).value = "(วันหยุดนักขัตฤกษ์)"
-                    public_holiday_count += 1
-                elif is_weekly:
+                else:
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
-                    weekly_holiday_count += 1
                     
-        # ถ้าเจอวงเล็บปิด แปลว่าจบช่วงวันหยุดประจำสัปดาห์แล้ว
         if ")" in shift_raw: is_in_weekly_period = False
                     
-    ws.cell(row=39, column=8).value = weekly_holiday_count
-    ws.cell(row=40, column=8).value = public_holiday_count
+    # 📌 4. รวบยอดจำนวนวันทั้งหมด ไปใส่ในแถวบนสุด (Row 39) แถวเดียว
+    ws.cell(row=39, column=8).value = total_holidays
     
+    # 📌 ล้างช่องด้านล่างทิ้ง เพื่อไม่ให้ซ้ำซ้อน
+    if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell':
+        ws.cell(row=40, column=8).value = None
+    if type(ws.cell(row=41, column=8)).__name__ != 'MergedCell':
+        ws.cell(row=41, column=8).value = None
+    
+    # 📌 สูตรบวกยอดรวมแถวล่างสุด
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
         ws.cell(row=42, column=8).value = f"=SUM(H39:H41)"
     
