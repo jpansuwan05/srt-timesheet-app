@@ -594,9 +594,10 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# 📌 อัปเดตตรรกะให้ดึง "ย" มารวมกับช่วงวันหยุดด้วย เพื่อให้ช่อง [4] และ [5] เรียงสวยงาม
+# 📌 อัปเดตตรรกะให้แยก [4] คือวงเล็บ, [5] คือ ย, และ [17] คือผลรวมอย่างถูกต้อง
 def extract_employee_stats(roster_row):
-    weekly_days = []
+    weekly_worked_holidays = [] # วันในวงเล็บ
+    weekly_rest_holidays = []   # วันที่เป็น ย
     leave_days_vacation = []
     
     is_in_period = False
@@ -605,11 +606,12 @@ def extract_employee_stats(roster_row):
         if "(" in val: is_in_period = True
         clean_val = val.replace("(", "").replace(")", "")
         
-        # วันหยุดประจำสัปดาห์ (ดึงทั้ง ย และวันที่อยู่ในวงเล็บ)
+        # วันหยุดประจำสัปดาห์ที่ "ไม่ได้มาทำงาน" (ย)
         if clean_val in ['ย', 'ย.']:
-            weekly_days.append(d)
+            weekly_rest_holidays.append(d)
+        # วันหยุดประจำสัปดาห์ที่ "มาทำงาน" (ในวงเล็บ)
         elif is_in_period and clean_val and clean_val not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
-            weekly_days.append(d)
+            weekly_worked_holidays.append(d)
             
         # วันหยุดพักผ่อน คือ พ
         if clean_val in ['พ', 'พ.']:
@@ -631,16 +633,20 @@ def extract_employee_stats(roster_row):
         ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
         return ranges
         
-    w_ranges = to_ranges(weekly_days)
-    val_4 = w_ranges[0] if len(w_ranges) > 0 else "-"
-    val_5 = ",".join(w_ranges[1:]) if len(w_ranges) > 1 else "-"
-    val_17 = f"{len(weekly_days):02d}" if weekly_days else "-"
+    worked_ranges = to_ranges(weekly_worked_holidays)
+    rest_ranges = to_ranges(weekly_rest_holidays)
+    
+    val_4 = ",".join(worked_ranges) if worked_ranges else "-"
+    val_5 = ",".join(rest_ranges) if rest_ranges else "-"
+    
+    total_weekly_holidays = len(weekly_worked_holidays) + len(weekly_rest_holidays)
+    val_17 = f"{total_weekly_holidays:02d}"
     
     v_ranges = to_ranges(leave_days_vacation)
     val_9 = ",".join(v_ranges) if v_ranges else "-"
     val_10 = str(leave_days_vacation[0]) if leave_days_vacation else "-"
     val_11 = str(leave_days_vacation[-1]) if leave_days_vacation else "-"
-    val_12 = f"{len(leave_days_vacation):02d}" if leave_days_vacation else "00"
+    val_12 = f"{len(leave_days_vacation):02d}"
     
     return val_4, val_5, val_17, val_9, val_10, val_11, val_12
 
@@ -772,7 +778,8 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output.seek(0)
     return output, total_pages
 
-def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
+def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
+    emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -871,7 +878,8 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
+def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
+    emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -920,7 +928,25 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     start_row = 7
     weekly_holiday_count = 0
     public_holiday_count = 0
-    is_in_weekly_period = False
+    
+    # 📌 คำนวณวันหยุดสัปดาห์ใน 178 จะยึดจากแค่กล่อง [4] เท่านั้น (เพราะวงเล็บคือวันทำงาน, ส่วน [5] คือ ย ไม่นับรวมในตารางเบิก)
+    def parse_holiday_string_to_set(day_str):
+        holiday_set = set()
+        if not day_str or day_str == "-": return holiday_set
+        parts = str(day_str).split(",")
+        for p in parts:
+            p = p.strip()
+            if "-" in p:
+                try:
+                    start, end = p.split("-")
+                    for d in range(int(start), int(end) + 1):
+                        holiday_set.add(d)
+                except: pass
+            elif p.isdigit():
+                holiday_set.add(int(p))
+        return holiday_set
+
+    manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_4', '0'))
     
     for day in range(1, 32):
         row = start_row + day
@@ -935,15 +961,11 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
-        if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
-            is_weekly = False
-            
-            if is_in_weekly_period and not is_public:
-                is_weekly = True
+            is_weekly = day in manual_weekly_holidays
                 
             if is_public or is_weekly:
                 t1_start, t1_end, t2_start, t2_end = None, None, None, None
@@ -973,8 +995,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                     ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
                     weekly_holiday_count += 1
                     
-        if ")" in shift_raw: is_in_weekly_period = False
-                    
     if type(ws.cell(row=39, column=8)).__name__ != 'MergedCell': ws.cell(row=39, column=8).value = None
     if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell': ws.cell(row=40, column=8).value = None
     
@@ -993,7 +1013,8 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days):
+def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_days):
+    emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -1167,10 +1188,10 @@ with st.container(border=True):
 
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                st.text_input("วันหยุด [4]", value=val_4_auto, disabled=True)
+                st.text_input("วันหยุดที่มาทำงาน [4]", value=val_4_auto, disabled=True)
                 st.text_input("หยุดพักผ่อน [9]", value=val_9_auto, disabled=True)
             with c2:
-                st.text_input("วันหยุด [5]", value=val_5_auto, disabled=True)
+                st.text_input("วันหยุดที่ไม่ได้มาทำงาน (ย) [5]", value=val_5_auto, disabled=True)
                 st.text_input("พักผ่อนตั้งแต่ [10]", value=val_10_auto, disabled=True)
             with c3:
                 st.text_input("รวมวันหยุดประจำสัปดาห์ [17]", value=val_17_auto, disabled=True)
