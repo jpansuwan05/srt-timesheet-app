@@ -17,6 +17,28 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wide")
 
 # ==========================================
+# 📌 0. ข้อมูลตั้งต้นที่สำคัญมาก (Global Variables)
+# ==========================================
+leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
+roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
+shift_data = {
+    "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "0-12": {"text": "(00.00-12.00) น.", "hours": 4}, "00-12": {"text": "(00.00-12.00) น.", "hours": 4},
+    "12-24": {"text": "(12.00-24.00) น.", "hours": 4}, "00-24": {"text": "(00.00-24.00) น.", "hours": 4},
+    "(ว)": {"text": "(06.00-18.00) น.", "hours": 4}, "(ค)": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "(ว/ค)": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "(ค/ว)": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "(0-12)": {"text": "(00.00-12.00) น.", "hours": 4}, "(00-12)": {"text": "(00.00-12.00) น.", "hours": 4},
+    "(12-24)": {"text": "(12.00-24.00) น.", "hours": 4},
+    "ย": {"text": "ย.", "hours": "-"}, "ย.": {"text": "ย.", "hours": "-"},
+    "พ": {"text": "พ.", "hours": "-"}, "พ.": {"text": "พ.", "hours": "-"},
+    "ป": {"text": "ป.", "hours": "-"}, "ป.": {"text": "ป.", "hours": "-"},
+    "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
+    "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
+    "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
+}
+
+# ==========================================
 # ✨ เวทมนตร์ CSS แต่งหน้าตา Web App ให้ดู Modern
 # ==========================================
 st.markdown("""
@@ -72,9 +94,6 @@ st.markdown("""
 
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
 
-# ==========================================
-# 0. ระบบดักจับการรีเฟรช และ Local Storage
-# ==========================================
 components.html("""
     <script>
         window.parent.addEventListener('beforeunload', function (e) {
@@ -103,28 +122,6 @@ def load_roster_from_local():
     except:
         return None
     return None
-
-# ==========================================
-# 📌 0. ข้อมูลตั้งต้นที่สำคัญมาก (Global Variables)
-# ==========================================
-leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
-roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
-shift_data = {
-    "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
-    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
-    "0-12": {"text": "(00.00-12.00) น.", "hours": 4}, "00-12": {"text": "(00.00-12.00) น.", "hours": 4},
-    "12-24": {"text": "(12.00-24.00) น.", "hours": 4}, "00-24": {"text": "(00.00-24.00) น.", "hours": 4},
-    "(ว)": {"text": "(06.00-18.00) น.", "hours": 4}, "(ค)": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
-    "(ว/ค)": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "(ค/ว)": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
-    "(0-12)": {"text": "(00.00-12.00) น.", "hours": 4}, "(00-12)": {"text": "(00.00-12.00) น.", "hours": 4},
-    "(12-24)": {"text": "(12.00-24.00) น.", "hours": 4},
-    "ย": {"text": "ย.", "hours": "-"}, "ย.": {"text": "ย.", "hours": "-"},
-    "พ": {"text": "พ.", "hours": "-"}, "พ.": {"text": "พ.", "hours": "-"},
-    "ป": {"text": "ป.", "hours": "-"}, "ป.": {"text": "ป.", "hours": "-"},
-    "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
-    "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
-    "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
-}
 
 def sort_roster_by_role(df, emp_dict):
     role_to_group_map = {}
@@ -569,7 +566,6 @@ with st.container(border=True):
         st.session_state.roster_df = edited_df
         save_roster_to_local(edited_df)
         local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_update_{uuid.uuid4().hex}")
-        # 📌 ถอด st.rerun() ออก เพื่อป้องกันตารางกระพริบเบิ้ลและข้อมูลหายตอนพิมพ์เร็วๆ
 
     for _, row in edited_df.iterrows():
         name = str(row.get('ชื่อ-สกุล', '')).strip()
@@ -879,6 +875,8 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     rate_baht = int(rate_val)
     rate_satang = int(round((rate_val - rate_baht) * 100))
     
+    sum_hours = 0 
+    
     def set_cell_val_color(r, c, val, color_hex="000000"):
         cell = ws.cell(row=r, column=c)
         if type(cell).__name__ != 'MergedCell':
@@ -906,6 +904,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         
         if sData and sData["hours"] != "-":
             hours_val = int(sData["hours"])
+            sum_hours += hours_val 
             total_money = hours_val * rate_val
             total_baht = int(total_money)
             total_satang = int(round((total_money - total_baht) * 100))
@@ -922,12 +921,20 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             for col in range(3, 8): 
                 set_cell_val_color(row, col, "-", font_color)
                     
+    # 📌 คำนวณยอดรวมใหม่ด้วยตัวเอง แล้วเขียนทับสูตร Excel
+    grand_total_money = sum_hours * rate_val
+    grand_total_baht = int(grand_total_money)
+    grand_total_satang = int(round((grand_total_money - grand_total_baht) * 100))
+
     for r in range(37, 45):
         cell_v1 = str(ws.cell(row=r, column=1).value).strip()
         cell_v2 = str(ws.cell(row=r, column=2).value).strip()
         if "รวม" in cell_v1 or "รวม" in cell_v2:
+            set_cell_val_color(r, 3, sum_hours, "000000")
             set_cell_val_color(r, 4, rate_baht if rate_baht > 0 else 0, "000000")
             set_cell_val_color(r, 5, f"{rate_satang:02d}", "000000")
+            set_cell_val_color(r, 6, grand_total_baht if grand_total_baht > 0 else 0, "000000")
+            set_cell_val_color(r, 7, f"{grand_total_satang:02d}", "000000")
             break
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
@@ -1006,7 +1013,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 holiday_set.add(int(p))
         return holiday_set
 
-    # 📌 ดึงวันที่ทำงานจาก [5] 
     manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
     for day in range(1, 32):
