@@ -17,6 +17,29 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wide")
 
 # ==========================================
+# 📌 0. ข้อมูลตั้งต้นที่สำคัญมาก (Global Variables)
+# ย้ายมาไว้บนสุดเพื่อให้ระบบรู้จักทันทีที่เปิดเว็บ ป้องกัน Error
+# ==========================================
+leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
+roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
+shift_data = {
+    "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "0-12": {"text": "(00.00-12.00) น.", "hours": 4}, "00-12": {"text": "(00.00-12.00) น.", "hours": 4},
+    "12-24": {"text": "(12.00-24.00) น.", "hours": 4}, "00-24": {"text": "(00.00-24.00) น.", "hours": 4},
+    "(ว)": {"text": "(06.00-18.00) น.", "hours": 4}, "(ค)": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "(ว/ค)": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "(ค/ว)": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "(0-12)": {"text": "(00.00-12.00) น.", "hours": 4}, "(00-12)": {"text": "(00.00-12.00) น.", "hours": 4},
+    "(12-24)": {"text": "(12.00-24.00) น.", "hours": 4},
+    "ย": {"text": "ย.", "hours": "-"}, "ย.": {"text": "ย.", "hours": "-"},
+    "พ": {"text": "พ.", "hours": "-"}, "พ.": {"text": "พ.", "hours": "-"},
+    "ป": {"text": "ป.", "hours": "-"}, "ป.": {"text": "ป.", "hours": "-"},
+    "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
+    "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
+    "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
+}
+
+# ==========================================
 # ✨ เวทมนตร์ CSS แต่งหน้าตา Web App ให้ดู Modern
 # ==========================================
 st.markdown("""
@@ -101,11 +124,8 @@ def load_roster_from_local():
         return None
     return None
 
-roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
-
 # 📌 อัปเกรดฟังก์ชันจัดเรียง: แอบดู "กลุ่ม" ของคนประจำ แล้วดึงคนมาใหม่ไปเสียบให้ถูกกลุ่มเป๊ะๆ
 def sort_roster_by_role(df, emp_dict):
-    # 1. สร้างฐานข้อมูลจำลองว่า Role ไหน อยู่กลุ่มไหน (จากข้อมูลคนประจำ)
     role_to_group_map = {}
     for k, v in emp_dict.items():
         if v.get('is_regular', False):
@@ -114,7 +134,6 @@ def sort_roster_by_role(df, emp_dict):
             if g and g != 'nan' and r not in role_to_group_map:
                 role_to_group_map[r] = g
                 
-    # 2. ซ่อมแซม "กลุ่ม" ให้คนมาใหม่ (ถ้าไม่มีกลุ่ม ให้ยึดตามคนประจำที่มี Role เดียวกัน)
     for k, v in emp_dict.items():
         if not v.get('is_regular', False):
             r = str(v.get('Role', '')).strip()
@@ -123,12 +142,10 @@ def sort_roster_by_role(df, emp_dict):
                 if r in role_to_group_map:
                     v['กลุ่ม'] = role_to_group_map[r]
 
-    # 3. เริ่มขั้นตอนการจัดเรียง
     temp_df = df.copy()
     group_order = {}
     g_idx = 0
     
-    # ยึดลำดับจากไฟล์ Excel เป็นหลัก
     for k, v in emp_dict.items():
         if v.get('is_regular', False):
             g = str(v.get('กลุ่ม', '')).strip()
@@ -150,9 +167,9 @@ def sort_roster_by_role(df, emp_dict):
             
         is_reg = info.get('is_regular', False)
         
-        order_1 = group_order.get(g, 999) # ให้คะแนนกลุ่ม ใครมาก่อนอยู่บน
-        order_2 = 0 if is_reg else 1      # คนประจำ (0) มาก่อนคนเพิ่มทีหลัง (1)
-        order_3 = row.name                # ลำดับเดิม
+        order_1 = group_order.get(g, 999) 
+        order_2 = 0 if is_reg else 1      
+        order_3 = row.name                
         
         return (order_1, order_2, order_3)
         
@@ -577,8 +594,6 @@ def get_shift_clean_for_val(row_data, day_num):
     s = str(val).strip().replace("(", "").replace(")", "")
     return s
 
-leave_types_val = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
-
 for d in range(1, num_days + 1):
     day_info = {r: {'reg':[], 'sub':[]} for r in roles_list}
     
@@ -596,17 +611,17 @@ for d in range(1, num_days + 1):
 
     nsn_allowed = ["ว", "ค", "ค/ว", "ว/ค", "00-12", "12-24", "00-24", "0-12"]
     for p in day_info['นสน.']['reg'] + day_info['นสน.']['sub']:
-        if p['shift'] not in leave_types_val and p['shift'] not in nsn_allowed:
+        if p['shift'] not in leave_types and p['shift'] not in nsn_allowed:
             validator_errors.append(f"วันที่ {d}: {p['name']} (นสน.) ลงรหัส '{p['shift']}' ไม่ถูกต้อง (ต้องเป็น ว, ค, ค/ว, ว/ค, 00-12, 12-24, 00-24)")
             
     reg_nsn_shift = day_info['นสน.']['reg'][0]['shift'] if day_info['นสน.']['reg'] else ""
     for p in day_info['นสน.']['sub']:
-        if p['shift'] not in leave_types_val:
+        if p['shift'] not in leave_types:
             if reg_nsn_shift not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "ล", "ลา", "น"]:
                 validator_errors.append(f"วันที่ {d}: {p['name']} (มาแทน นสน.) เข้าเวรไม่ได้ เพราะนายสถานีตัวจริงไม่ได้ลา (ตัวจริงลง '{reg_nsn_shift}')")
                 
     def get_active(role_str):
-        return [x for x in (day_info[role_str]['reg'] + day_info[role_str]['sub']) if x['shift'] not in leave_types_val]
+        return [x for x in (day_info[role_str]['reg'] + day_info[role_str]['sub']) if x['shift'] not in leave_types]
         
     active_ch1 = get_active('ช.นสน.1')
     active_ch2 = get_active('ช.นสน.2')
@@ -629,7 +644,7 @@ for d in range(1, num_days + 1):
         if role == 'นสน.': continue
         for r in day_info[role]['reg']:
             for s in day_info[role]['sub']:
-                if r['shift'] not in leave_types_val and s['shift'] not in leave_types_val:
+                if r['shift'] not in leave_types and s['shift'] not in leave_types:
                     if r['shift'] == s['shift']:
                         validator_errors.append(f"วันที่ {d}: {s['name']} ลงเวร '{s['shift']}' ซ้ำกับตัวจริง {r['name']} ในตำแหน่ง {role}")
                         
