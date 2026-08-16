@@ -1,24 +1,18 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+from openpyxl.worksheet.properties import PageSetupProperties
+from openpyxl.styles import Border, Side, Alignment, Font
 import io
 import datetime
 import calendar
+import re
 import json
 import uuid
 import zipfile  
+from copy import copy
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
-
-# 📌 นำเข้าฟังก์ชันจากไฟล์ excel_utils.py
-from excel_utils import (
-    extract_employee_stats, 
-    generate_109, 
-    generate_177, 
-    generate_178, 
-    generate_report_work,
-    leave_types
-)
 
 st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wide")
 
@@ -78,6 +72,9 @@ st.markdown("""
 
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
 
+# ==========================================
+# 0. ระบบดักจับการรีเฟรช และ Local Storage
+# ==========================================
 components.html("""
     <script>
         window.parent.addEventListener('beforeunload', function (e) {
@@ -109,11 +106,13 @@ def load_roster_from_local():
 
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
+# 📌 อัปเกรดฟังก์ชันจัดเรียง: ให้คนมาแทน (is_regular=False) ไปต่อท้ายคนประจำในกลุ่มเดียวกัน
 def sort_roster_by_role(df, emp_dict):
     temp_df = df.copy()
     
     group_order = {}
     g_idx = 0
+    # ยึดลำดับกลุ่มจากข้อมูลพนักงานประจำ
     for k, v in emp_dict.items():
         if v.get('is_regular', False):
             g = v.get('กลุ่ม', v.get('Role', 'อื่นๆ'))
@@ -122,15 +121,20 @@ def sort_roster_by_role(df, emp_dict):
                 g_idx += 1
                 
     def get_sort_key(row):
-        name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
+        name = str(row.get('ชื่อ-สกุล', '')).strip()
+        role = str(row.get('Role (หน้าที่)', '')).strip()
         info = emp_dict.get(f"{name}_{role}", {})
         
-        group = info.get('กลุ่ม', info.get('Role', 'อื่นๆ'))
+        # ถ้าระบุกลุ่มไม่ได้ ให้ยึด Role เป็นกลุ่ม
+        group = info.get('กลุ่ม')
+        if not group or group == 'nan':
+            group = info.get('Role', role)
+            
         is_reg = info.get('is_regular', False)
         
-        order_1 = group_order.get(group, 999)
-        order_2 = 0 if is_reg else 1
-        order_3 = row.name 
+        order_1 = group_order.get(group, 999) # ลำดับกลุ่ม (นสน. มาก่อน ฯลฯ)
+        order_2 = 0 if is_reg else 1          # คนประจำ (0) มาก่อน คนมาแทน (1)
+        order_3 = row.name                    # รักษาลำดับการเพิ่มข้อมูล
         
         return (order_1, order_2, order_3)
         
@@ -175,11 +179,26 @@ with st.sidebar:
                     if str(d) in loaded_df.columns:
                         loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
                 
-                # 📌 จัดเรียงลำดับใหม่ทันทีที่โหลดไฟล์ Backup ป้องกันรายชื่อสลับมั่ว
+                # 📌 ซ่อมแซมฐานข้อมูล: ดึงคนมาแทนในไฟล์ Backup ใส่เข้าไปในระบบ พร้อมกำหนดกลุ่มให้ถูกต้อง
+                for _, row in loaded_df.iterrows():
+                    n = str(row.get('ชื่อ-สกุล', '')).strip()
+                    r = str(row.get('Role (หน้าที่)', '')).strip()
+                    if not n: continue
+                    ukey = f"{n}_{r}"
+                    if ukey not in st.session_state.employees:
+                        st.session_state.employees[ukey] = {
+                            "ชื่อ-สกุล": n, "ตำแหน่ง": str(row.get('ตำแหน่งเบิก', '')).strip(), 
+                            "เลขประจำตัว": "-", "เงินเดือน": "-", "เรท": 0.0, 
+                            "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", 
+                            "กลุ่ม": r, "Role": r, "is_regular": False
+                        }
+                
+                # จัดเรียงลำดับใหม่ทันที โดยดันคนมาแทนไปไว้ท้ายกลุ่ม
                 sorted_df = sort_roster_by_role(loaded_df, st.session_state.employees)
                 st.session_state.roster_df = sorted_df
                 save_roster_to_local(sorted_df)
-                st.success("โหลดข้อมูลสำเร็จ และจัดเรียงรายชื่อให้ใหม่เรียบร้อย! 🎉")
+                local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
+                st.success("โหลดข้อมูลสำเร็จ และจัดเรียงรายชื่อคนมาแทนให้ใหม่เรียบร้อย! 🎉")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
@@ -202,7 +221,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
             
     with st.container(border=True):
         st.warning("🔒 **ยังไม่มีข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์เพื่อเริ่มต้น**")
-        uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์ 'ข้อมูล.xlsx' ของสถานีคุณ", type=["xlsx"])
+        uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์ 'ข้อมูล_2.xlsx' ของสถานีคุณ", type=["xlsx"])
         
         if uploaded_emp_file is not None:
             try:
@@ -310,7 +329,7 @@ first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 with st.expander("📖 คู่มือการใช้งานระบบ (คลิกเพื่ออ่านคำแนะนำ)"):
     st.markdown("""
     **1. การตั้งค่าเริ่มต้น:**
-    - อัปโหลดไฟล์ `ข้อมูล.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
+    - อัปโหลดไฟล์ `ข้อมูล_2.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
     - สามารถเปลี่ยนเดือน, ปี พ.ศ., และกำหนดวันหยุดนักขัตฤกษ์ได้ในส่วน "ตั้งค่าข้อมูลส่วนกลาง"
     
     **2. การพิมพ์รหัสในตารางเวร (Master Data):**
@@ -385,7 +404,6 @@ with st.container(border=True):
     with col_title:
         st.subheader(f"🗓️ 2. จัดการตารางเวร 1-{num_days} วัน")
     with col_btn:
-        # 📌 เพิ่มปุ่มสำหรับจัดเรียงตารางใหม่ด้วยตัวเอง
         if st.button("🗂️ จัดเรียงตารางใหม่", use_container_width=True, help="ดันคนมาแทนไปต่อท้ายกลุ่ม"):
             st.session_state.roster_df = sort_roster_by_role(st.session_state.roster_df, st.session_state.employees)
             save_roster_to_local(st.session_state.roster_df)
@@ -540,6 +558,24 @@ def get_shift_clean_for_val(row_data, day_num):
     s = str(val).strip().replace("(", "").replace(")", "")
     return s
 
+# ข้อมูลตารางเวรตั้งต้น สำหรับ Validator
+shift_data = {
+    "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "0-12": {"text": "(00.00-12.00) น.", "hours": 4}, "00-12": {"text": "(00.00-12.00) น.", "hours": 4},
+    "12-24": {"text": "(12.00-24.00) น.", "hours": 4}, "00-24": {"text": "(00.00-24.00) น.", "hours": 4},
+    "(ว)": {"text": "(06.00-18.00) น.", "hours": 4}, "(ค)": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
+    "(ว/ค)": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "(ค/ว)": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
+    "(0-12)": {"text": "(00.00-12.00) น.", "hours": 4}, "(00-12)": {"text": "(00.00-12.00) น.", "hours": 4},
+    "(12-24)": {"text": "(12.00-24.00) น.", "hours": 4},
+    "ย": {"text": "ย.", "hours": "-"}, "ย.": {"text": "ย.", "hours": "-"},
+    "พ": {"text": "พ.", "hours": "-"}, "พ.": {"text": "พ.", "hours": "-"},
+    "ป": {"text": "ป.", "hours": "-"}, "ป.": {"text": "ป.", "hours": "-"},
+    "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
+    "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
+    "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
+}
+
 for d in range(1, num_days + 1):
     day_info = {r: {'reg':[], 'sub':[]} for r in roles_list}
     
@@ -687,6 +723,35 @@ with st.container(border=True):
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
+
+            st.markdown("---")
+            st.markdown("##### 📦 ดาวน์โหลดรวมทุกไฟล์ในคลิกเดียว (ZIP)")
+            if st.button(f"แพ็กรวมเอกสารของ {sel_name} (177, 178, รายงาน)", type="primary", use_container_width=True):
+                with st.spinner("กำลังแพ็กไฟล์..."):
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                        if excel_177:
+                            zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
+                            
+                        excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                        if excel_178:
+                            zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
+                            
+                        excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                        if excel_work:
+                            zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
+                            
+                    st.session_state[f"zip_export_{selected_key_177}"] = zip_buffer.getvalue()
+
+            if f"zip_export_{selected_key_177}" in st.session_state:
+                st.download_button(
+                    "📥 คลิกดาวน์โหลดไฟล์ ZIP ทั้งหมด",
+                    data=st.session_state[f"zip_export_{selected_key_177}"],
+                    file_name=f"เอกสารเบิกเงิน_{sel_name}.zip",
+                    mime="application/zip",
+                    use_container_width=True
+                )
 
     with tab3:
         st.markdown("**ดาวน์โหลดเอกสารของพนักงานหลายคนพร้อมกันในคลิกเดียว ระบบจะแยกไฟล์ใส่โฟลเดอร์ให้เป็นระเบียบ**")
