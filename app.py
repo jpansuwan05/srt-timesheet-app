@@ -594,8 +594,9 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
+# 📌 อัปเดตตรรกะให้ดึง "ย" มารวมกับช่วงวันหยุดด้วย เพื่อให้ช่อง [4] และ [5] เรียงสวยงาม
 def extract_employee_stats(roster_row):
-    weekly_worked_holidays = []
+    weekly_days = []
     leave_days_vacation = []
     
     is_in_period = False
@@ -604,9 +605,13 @@ def extract_employee_stats(roster_row):
         if "(" in val: is_in_period = True
         clean_val = val.replace("(", "").replace(")", "")
         
-        if is_in_period and clean_val and clean_val not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
-            weekly_worked_holidays.append(d)
+        # วันหยุดประจำสัปดาห์ (ดึงทั้ง ย และวันที่อยู่ในวงเล็บ)
+        if clean_val in ['ย', 'ย.']:
+            weekly_days.append(d)
+        elif is_in_period and clean_val and clean_val not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
+            weekly_days.append(d)
             
+        # วันหยุดพักผ่อน คือ พ
         if clean_val in ['พ', 'พ.']:
             leave_days_vacation.append(d)
             
@@ -626,16 +631,16 @@ def extract_employee_stats(roster_row):
         ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
         return ranges
         
-    w_ranges = to_ranges(weekly_worked_holidays)
+    w_ranges = to_ranges(weekly_days)
     val_4 = w_ranges[0] if len(w_ranges) > 0 else "-"
     val_5 = ",".join(w_ranges[1:]) if len(w_ranges) > 1 else "-"
-    val_17 = f"{len(weekly_worked_holidays):02d}"
+    val_17 = f"{len(weekly_days):02d}" if weekly_days else "-"
     
     v_ranges = to_ranges(leave_days_vacation)
     val_9 = ",".join(v_ranges) if v_ranges else "-"
     val_10 = str(leave_days_vacation[0]) if leave_days_vacation else "-"
     val_11 = str(leave_days_vacation[-1]) if leave_days_vacation else "-"
-    val_12 = f"{len(leave_days_vacation):02d}"
+    val_12 = f"{len(leave_days_vacation):02d}" if leave_days_vacation else "00"
     
     return val_4, val_5, val_17, val_9, val_10, val_11, val_12
 
@@ -767,8 +772,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output.seek(0)
     return output, total_pages
 
-def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
-    emp_info = st.session_state.employees.get(unique_key)
+def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -867,8 +871,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
-    emp_info = st.session_state.employees.get(unique_key)
+def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -990,8 +993,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_days):
-    emp_info = st.session_state.employees.get(unique_key)
+def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -1188,10 +1190,9 @@ with st.container(border=True):
             st.markdown("<br>", unsafe_allow_html=True)
             col_btn1, col_btn2, col_btn3 = st.columns(3)
             
-            # 📌 แก้ไขจุดที่เป็นบั๊ก (เปลี่ยน unique_key เป็น selected_key_177)
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
-                    excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                    excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 177", data=excel_177, file_name=f"177_{sel_name}.xlsx", use_container_width=True)
@@ -1200,7 +1201,7 @@ with st.container(border=True):
                         
             with col_btn2:
                 if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", use_container_width=True):
-                    excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                    excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 178", data=excel_178, file_name=f"178_{sel_name}.xlsx", use_container_width=True)
@@ -1209,7 +1210,7 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
-                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                    excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
@@ -1220,15 +1221,15 @@ with st.container(border=True):
                 with st.spinner("กำลังแพ็กไฟล์..."):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                         if excel_177:
                             zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                         if excel_178:
                             zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                         if excel_work:
                             zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
@@ -1286,13 +1287,13 @@ with st.container(border=True):
                                 "val_6": batch_val_6
                             }
                             
-                            excel_177 = generate_177(unique_key, roster_dict, global_data, export_ind, num_days)
+                            excel_177 = generate_177(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
                             if excel_177: zip_file.writestr(f"ใบเบิก_177/177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                            excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
+                            excel_178 = generate_178(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
                             if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                            excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
+                            excel_work = generate_report_work(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
                             if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
                     st.session_state["batch_zip_export"] = zip_buffer.getvalue()
