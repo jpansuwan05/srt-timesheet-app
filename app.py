@@ -103,48 +103,58 @@ def load_roster_from_local():
 
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
-# 📌 อัปเกรดฟังก์ชันจัดเรียง: ยึดตามลำดับในไฟล์ ข้อมูล_2.xlsx เป็นหลัก ใครเพิ่มทีหลังไปอยู่ท้ายกลุ่ม
+# 📌 อัปเกรดฟังก์ชันจัดเรียง: แอบดู "กลุ่ม" ของคนประจำ แล้วดึงคนมาใหม่ไปเสียบให้ถูกกลุ่มเป๊ะๆ
 def sort_roster_by_role(df, emp_dict):
-    temp_df = df.copy()
-    
-    group_order = {}
-    emp_order = {}
-    g_idx = 0
-    e_idx = 0
-    
-    # สแกนพนักงานทั้งหมดจากฐานข้อมูล (ซึ่งเรียงตาม ข้อมูล_2.xlsx)
+    # 1. สร้างฐานข้อมูลจำลองว่า Role ไหน อยู่กลุ่มไหน (จากข้อมูลคนประจำ)
+    role_to_group_map = {}
     for k, v in emp_dict.items():
-        g = str(v.get('กลุ่ม', '')).strip()
-        if not g or g == 'nan':
-            g = str(v.get('Role', 'อื่นๆ')).strip()
-            
-        if g not in group_order:
-            group_order[g] = g_idx
-            g_idx += 1
-            
-        # จำตำแหน่งดั้งเดิมของพนักงานแต่ละคน
-        emp_order[k] = e_idx
-        e_idx += 1
-            
+        if v.get('is_regular', False):
+            g = str(v.get('กลุ่ม', '')).strip()
+            r = str(v.get('Role', '')).strip()
+            if g and g != 'nan' and r not in role_to_group_map:
+                role_to_group_map[r] = g
+                
+    # 2. ซ่อมแซม "กลุ่ม" ให้คนมาใหม่ (ถ้าไม่มีกลุ่ม ให้ยึดตามคนประจำที่มี Role เดียวกัน)
+    for k, v in emp_dict.items():
+        if not v.get('is_regular', False):
+            r = str(v.get('Role', '')).strip()
+            g = str(v.get('กลุ่ม', '')).strip()
+            if g == r or not g or g == 'nan':
+                if r in role_to_group_map:
+                    v['กลุ่ม'] = role_to_group_map[r]
+
+    # 3. เริ่มขั้นตอนการจัดเรียง
+    temp_df = df.copy()
+    group_order = {}
+    g_idx = 0
+    
+    # ยึดลำดับจากไฟล์ Excel เป็นหลัก
+    for k, v in emp_dict.items():
+        if v.get('is_regular', False):
+            g = str(v.get('กลุ่ม', '')).strip()
+            if not g or g == 'nan':
+                g = str(v.get('Role', 'อื่นๆ')).strip()
+            if g not in group_order:
+                group_order[g] = g_idx
+                g_idx += 1
+                
     def get_sort_key(row):
         name = str(row.get('ชื่อ-สกุล', '')).strip()
         role = str(row.get('Role (หน้าที่)', '')).strip()
         ukey = f"{name}_{role}"
-        
         info = emp_dict.get(ukey, {})
         
         g = str(info.get('กลุ่ม', '')).strip()
         if not g or g == 'nan':
             g = str(info.get('Role', role)).strip()
             
-        # ลำดับ 1: เรียงตามกลุ่ม (ใครมาก่อนในไฟล์ Excel ได้อยู่บน)
-        order_1 = group_order.get(g, 999)
+        is_reg = info.get('is_regular', False)
         
-        # ลำดับ 2: เรียงตามลำดับรายชื่อใน Excel หรือลำดับการกรอกเพิ่มในระบบ
-        # คนมาใหม่ที่กรอกทีหลัง จะได้ e_idx เยอะๆ ทำให้ไปตกอยู่ท้ายกลุ่มโดยอัตโนมัติ
-        order_2 = emp_order.get(ukey, 999999)
+        order_1 = group_order.get(g, 999) # ให้คะแนนกลุ่ม ใครมาก่อนอยู่บน
+        order_2 = 0 if is_reg else 1      # คนประจำ (0) มาก่อนคนเพิ่มทีหลัง (1)
+        order_3 = row.name                # ลำดับเดิม
         
-        return (order_1, order_2)
+        return (order_1, order_2, order_3)
         
     temp_df['sort_key'] = temp_df.apply(get_sort_key, axis=1)
     temp_df = temp_df.sort_values('sort_key').reset_index(drop=True)
@@ -187,7 +197,6 @@ with st.sidebar:
                     if str(d) in loaded_df.columns:
                         loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
                 
-                # 📌 ซ่อมแซมฐานข้อมูล: ดึงคนมาแทนในไฟล์ Backup ใส่เข้าไปในระบบ พร้อมกำหนดกลุ่มให้ถูกต้อง
                 for _, row in loaded_df.iterrows():
                     n = str(row.get('ชื่อ-สกุล', '')).strip()
                     r = str(row.get('Role (หน้าที่)', '')).strip()
@@ -201,7 +210,6 @@ with st.sidebar:
                             "กลุ่ม": r, "Role": r, "is_regular": False
                         }
                 
-                # จัดเรียงลำดับใหม่ทันที โดยดันคนมาแทนไปไว้ท้ายกลุ่ม
                 sorted_df = sort_roster_by_role(loaded_df, st.session_state.employees)
                 st.session_state.roster_df = sorted_df
                 save_roster_to_local(sorted_df)
@@ -569,6 +577,8 @@ def get_shift_clean_for_val(row_data, day_num):
     s = str(val).strip().replace("(", "").replace(")", "")
     return s
 
+leave_types_val = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
+
 for d in range(1, num_days + 1):
     day_info = {r: {'reg':[], 'sub':[]} for r in roles_list}
     
@@ -586,17 +596,17 @@ for d in range(1, num_days + 1):
 
     nsn_allowed = ["ว", "ค", "ค/ว", "ว/ค", "00-12", "12-24", "00-24", "0-12"]
     for p in day_info['นสน.']['reg'] + day_info['นสน.']['sub']:
-        if p['shift'] not in leave_types and p['shift'] not in nsn_allowed:
+        if p['shift'] not in leave_types_val and p['shift'] not in nsn_allowed:
             validator_errors.append(f"วันที่ {d}: {p['name']} (นสน.) ลงรหัส '{p['shift']}' ไม่ถูกต้อง (ต้องเป็น ว, ค, ค/ว, ว/ค, 00-12, 12-24, 00-24)")
             
     reg_nsn_shift = day_info['นสน.']['reg'][0]['shift'] if day_info['นสน.']['reg'] else ""
     for p in day_info['นสน.']['sub']:
-        if p['shift'] not in leave_types:
+        if p['shift'] not in leave_types_val:
             if reg_nsn_shift not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "ล", "ลา", "น"]:
                 validator_errors.append(f"วันที่ {d}: {p['name']} (มาแทน นสน.) เข้าเวรไม่ได้ เพราะนายสถานีตัวจริงไม่ได้ลา (ตัวจริงลง '{reg_nsn_shift}')")
                 
     def get_active(role_str):
-        return [x for x in (day_info[role_str]['reg'] + day_info[role_str]['sub']) if x['shift'] not in leave_types]
+        return [x for x in (day_info[role_str]['reg'] + day_info[role_str]['sub']) if x['shift'] not in leave_types_val]
         
     active_ch1 = get_active('ช.นสน.1')
     active_ch2 = get_active('ช.นสน.2')
@@ -619,7 +629,7 @@ for d in range(1, num_days + 1):
         if role == 'นสน.': continue
         for r in day_info[role]['reg']:
             for s in day_info[role]['sub']:
-                if r['shift'] not in leave_types and s['shift'] not in leave_types:
+                if r['shift'] not in leave_types_val and s['shift'] not in leave_types_val:
                     if r['shift'] == s['shift']:
                         validator_errors.append(f"วันที่ {d}: {s['name']} ลงเวร '{s['shift']}' ซ้ำกับตัวจริง {r['name']} ในตำแหน่ง {role}")
                         
@@ -814,8 +824,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output.seek(0)
     return output, total_pages
 
-def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
-    emp_info = st.session_state.employees.get(unique_key)
+def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -914,8 +923,7 @@ def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
-    emp_info = st.session_state.employees.get(unique_key)
+def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -1053,8 +1061,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_days):
-    emp_info = st.session_state.employees.get(unique_key)
+def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -1253,7 +1260,7 @@ with st.container(border=True):
             
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
-                    excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                    excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 177", data=excel_177, file_name=f"177_{sel_name}.xlsx", use_container_width=True)
@@ -1262,7 +1269,7 @@ with st.container(border=True):
                         
             with col_btn2:
                 if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", use_container_width=True):
-                    excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                    excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 178", data=excel_178, file_name=f"178_{sel_name}.xlsx", use_container_width=True)
@@ -1271,7 +1278,7 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
-                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                    excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
@@ -1282,15 +1289,15 @@ with st.container(border=True):
                 with st.spinner("กำลังแพ็กไฟล์..."):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                         if excel_177:
                             zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                         if excel_178:
                             zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
+                        excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
                         if excel_work:
                             zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
@@ -1348,13 +1355,13 @@ with st.container(border=True):
                                 "val_6": batch_val_6
                             }
                             
-                            excel_177 = generate_177(unique_key, roster_dict, global_data, export_ind, num_days)
+                            excel_177 = generate_177(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
                             if excel_177: zip_file.writestr(f"ใบเบิก_177/177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                            excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
+                            excel_178 = generate_178(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
                             if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                            excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
+                            excel_work = generate_report_work(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
                             if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
                     st.session_state["batch_zip_export"] = zip_buffer.getvalue()
