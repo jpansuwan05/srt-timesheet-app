@@ -306,6 +306,30 @@ year_ce = default_year - 543
 first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 
 # ==========================================
+# 📖 คู่มือการใช้งานระบบ 
+# ==========================================
+with st.expander("📖 คู่มือการใช้งานระบบ (คลิกเพื่ออ่านคำแนะนำ)"):
+    st.markdown("""
+    **1. การตั้งค่าเริ่มต้น:**
+    - อัปโหลดไฟล์ `ข้อมูล.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน (หากโหลดแล้วระบบจะจำค่าไว้)
+    - สามารถเปลี่ยนเดือน, ปี พ.ศ., และกำหนดวันหยุดนักขัตฤกษ์ได้ในส่วน "ตั้งค่าข้อมูลส่วนกลาง"
+    
+    **2. การพิมพ์รหัสในตารางเวร (Master Data):**
+    - **ทำงานปกติ:** `ว`, `ค`, `ว/ค`, `ค/ว`, `00-12`, `12-24`, `00-24`
+    - **วันหยุดประจำสัปดาห์ที่มาทำงาน (เบิก 178):** ให้ใส่วงเล็บเปิด `(` ในวันที่เริ่มหยุด และวงเล็บปิด `)` ในวันสุดท้าย (เช่น `(ว` ... `ว)`)
+    - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
+    - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
+    
+    **3. การแก้ไขชื่อหรือ Role พนักงาน:**
+    - หากต้องการย้าย Role หรือแก้ชื่อ สามารถ **ดับเบิลคลิก** ในตารางเวรเพื่อแก้ได้โดยตรง
+    
+    **4. การส่งออกเอกสาร (Export):**
+    - เลื่อนลงไปด้านล่างที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
+    - เลือกแท็บ **"ส่งออกแบบกลุ่ม (หลายคนพร้อมกัน)"** เพื่อความรวดเร็ว
+    - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
+    """)
+
+# ==========================================
 # 4. ตั้งค่าส่วนกลาง & ตารางเวร
 # ==========================================
 with st.container(border=True):
@@ -570,7 +594,6 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# 📌 อัปเดตตรรกะใหม่: ดึงเฉพาะวันหยุดที่ทำงาน (อยู่ในวงเล็บ) เท่านั้น ตัด 'ย' ทิ้ง!
 def extract_employee_stats(roster_row):
     weekly_worked_holidays = []
     leave_days_vacation = []
@@ -581,11 +604,9 @@ def extract_employee_stats(roster_row):
         if "(" in val: is_in_period = True
         clean_val = val.replace("(", "").replace(")", "")
         
-        # วันหยุดประจำสัปดาห์ "ที่มาทำงาน" (เพื่อเบิก 178) คือวันที่อยู่ในวงเล็บ (ตัด ย ออก)
         if is_in_period and clean_val and clean_val not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
             weekly_worked_holidays.append(d)
             
-        # วันหยุดพักผ่อน คือ พ
         if clean_val in ['พ', 'พ.']:
             leave_days_vacation.append(d)
             
@@ -1167,9 +1188,10 @@ with st.container(border=True):
             st.markdown("<br>", unsafe_allow_html=True)
             col_btn1, col_btn2, col_btn3 = st.columns(3)
             
+            # 📌 แก้ไขจุดที่เป็นบั๊ก (เปลี่ยน unique_key เป็น selected_key_177)
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
-                    excel_177 = generate_177(unique_key, roster_dict, global_data, export_ind, num_days)
+                    excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 177", data=excel_177, file_name=f"177_{sel_name}.xlsx", use_container_width=True)
@@ -1178,7 +1200,7 @@ with st.container(border=True):
                         
             with col_btn2:
                 if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", use_container_width=True):
-                    excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
+                    excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 178", data=excel_178, file_name=f"178_{sel_name}.xlsx", use_container_width=True)
@@ -1187,7 +1209,7 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
-                    excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
+                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
@@ -1198,15 +1220,15 @@ with st.container(border=True):
                 with st.spinner("กำลังแพ็กไฟล์..."):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        excel_177 = generate_177(unique_key, roster_dict, global_data, export_ind, num_days)
+                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_177:
                             zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                        excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
+                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_178:
                             zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                        excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
+                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_work:
                             zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
