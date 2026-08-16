@@ -72,9 +72,6 @@ st.markdown("""
 
 st.title("🚂 ระบบจัดการเวรและใบเบิกค่าตอบแทน (รฟท.)")
 
-# ==========================================
-# 0. ระบบดักจับการรีเฟรช และ Local Storage
-# ==========================================
 components.html("""
     <script>
         window.parent.addEventListener('beforeunload', function (e) {
@@ -104,54 +101,50 @@ def load_roster_from_local():
         return None
     return None
 
-# ==========================================
-# 📌 ข้อมูลตั้งต้นที่สำคัญมาก (ห้ามลบ)
-# ==========================================
-leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
-shift_data = {
-    "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
-    "ว/ค": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "ค/ว": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
-    "0-12": {"text": "(00.00-12.00) น.", "hours": 4}, "00-12": {"text": "(00.00-12.00) น.", "hours": 4},
-    "12-24": {"text": "(12.00-24.00) น.", "hours": 4}, "00-24": {"text": "(00.00-24.00) น.", "hours": 4},
-    "(ว)": {"text": "(06.00-18.00) น.", "hours": 4}, "(ค)": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
-    "(ว/ค)": {"text": "(06.00-12.00)(18.00-24.00) น.", "hours": 4}, "(ค/ว)": {"text": "(00.00-06.00)(12.00-18.00) น.", "hours": 4},
-    "(0-12)": {"text": "(00.00-12.00) น.", "hours": 4}, "(00-12)": {"text": "(00.00-12.00) น.", "hours": 4},
-    "(12-24)": {"text": "(12.00-24.00) น.", "hours": 4},
-    "ย": {"text": "ย.", "hours": "-"}, "ย.": {"text": "ย.", "hours": "-"},
-    "พ": {"text": "พ.", "hours": "-"}, "พ.": {"text": "พ.", "hours": "-"},
-    "ป": {"text": "ป.", "hours": "-"}, "ป.": {"text": "ป.", "hours": "-"},
-    "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
-    "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
-    "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
-}
 
+# 📌 อัปเกรดฟังก์ชันจัดเรียง: ยึดตามลำดับในไฟล์ ข้อมูล_2.xlsx เป็นหลัก ใครเพิ่มทีหลังไปอยู่ท้ายกลุ่ม
 def sort_roster_by_role(df, emp_dict):
     temp_df = df.copy()
+    
     group_order = {}
+    emp_order = {}
     g_idx = 0
+    e_idx = 0
+    
+    # สแกนพนักงานทั้งหมดจากฐานข้อมูล (ซึ่งเรียงตาม ข้อมูล_2.xlsx)
     for k, v in emp_dict.items():
-        if v.get('is_regular', False):
-            g = v.get('กลุ่ม', v.get('Role', 'อื่นๆ'))
-            if g not in group_order:
-                group_order[g] = g_idx
-                g_idx += 1
-                
+        g = str(v.get('กลุ่ม', '')).strip()
+        if not g or g == 'nan':
+            g = str(v.get('Role', 'อื่นๆ')).strip()
+            
+        if g not in group_order:
+            group_order[g] = g_idx
+            g_idx += 1
+            
+        # จำตำแหน่งดั้งเดิมของพนักงานแต่ละคน
+        emp_order[k] = e_idx
+        e_idx += 1
+            
     def get_sort_key(row):
         name = str(row.get('ชื่อ-สกุล', '')).strip()
         role = str(row.get('Role (หน้าที่)', '')).strip()
-        info = emp_dict.get(f"{name}_{role}", {})
+        ukey = f"{name}_{role}"
         
-        group = info.get('กลุ่ม')
-        if not group or group == 'nan':
-            group = info.get('Role', role)
+        info = emp_dict.get(ukey, {})
+        
+        g = str(info.get('กลุ่ม', '')).strip()
+        if not g or g == 'nan':
+            g = str(info.get('Role', role)).strip()
             
-        is_reg = info.get('is_regular', False)
+        # ลำดับ 1: เรียงตามกลุ่ม (ใครมาก่อนในไฟล์ Excel ได้อยู่บน)
+        order_1 = group_order.get(g, 999)
         
-        order_1 = group_order.get(group, 999) 
-        order_2 = 0 if is_reg else 1          
-        order_3 = row.name                    
-        return (order_1, order_2, order_3)
+        # ลำดับ 2: เรียงตามลำดับรายชื่อใน Excel หรือลำดับการกรอกเพิ่มในระบบ
+        # คนมาใหม่ที่กรอกทีหลัง จะได้ e_idx เยอะๆ ทำให้ไปตกอยู่ท้ายกลุ่มโดยอัตโนมัติ
+        order_2 = emp_order.get(ukey, 999999)
+        
+        return (order_1, order_2)
         
     temp_df['sort_key'] = temp_df.apply(get_sort_key, axis=1)
     temp_df = temp_df.sort_values('sort_key').reset_index(drop=True)
@@ -194,6 +187,7 @@ with st.sidebar:
                     if str(d) in loaded_df.columns:
                         loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
                 
+                # 📌 ซ่อมแซมฐานข้อมูล: ดึงคนมาแทนในไฟล์ Backup ใส่เข้าไปในระบบ พร้อมกำหนดกลุ่มให้ถูกต้อง
                 for _, row in loaded_df.iterrows():
                     n = str(row.get('ชื่อ-สกุล', '')).strip()
                     r = str(row.get('Role (หน้าที่)', '')).strip()
@@ -207,11 +201,12 @@ with st.sidebar:
                             "กลุ่ม": r, "Role": r, "is_regular": False
                         }
                 
+                # จัดเรียงลำดับใหม่ทันที โดยดันคนมาแทนไปไว้ท้ายกลุ่ม
                 sorted_df = sort_roster_by_role(loaded_df, st.session_state.employees)
                 st.session_state.roster_df = sorted_df
                 save_roster_to_local(sorted_df)
                 local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
-                st.success("โหลดข้อมูลสำเร็จ และจัดเรียงรายชื่อคนมาแทนให้ใหม่เรียบร้อย! 🎉")
+                st.success("โหลดข้อมูลสำเร็จ และจัดเรียงรายชื่อให้ใหม่เรียบร้อย! 🎉")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
@@ -351,7 +346,10 @@ with st.expander("📖 คู่มือการใช้งานระบบ
     - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
     - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
     
-    **3. การส่งออกเอกสาร (Export):**
+    **3. การจัดเรียงคนมาใหม่:**
+    - หากตารางเรียงปนกัน ให้กดปุ่ม **"🗂️ จัดเรียงตารางใหม่"** ระบบจะดันคนมาใหม่ไปไว้ท้ายกลุ่มให้อัตโนมัติ
+    
+    **4. การส่งออกเอกสาร (Export):**
     - ไปที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
     - เลือกแท็บ **"ส่งออกแบบกลุ่ม"**
     - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
@@ -816,7 +814,8 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output.seek(0)
     return output, total_pages
 
-def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
+def generate_177(unique_key, roster_data, global_vars, ind_vars, num_days):
+    emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -915,7 +914,8 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
+def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
+    emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -1053,7 +1053,8 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     output.seek(0)
     return output
 
-def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days):
+def generate_report_work(unique_key, roster_data, global_vars, ind_vars, num_days):
+    emp_info = st.session_state.employees.get(unique_key)
     if not emp_info: return None
     
     emp_id_str = str(emp_info.get("เลขประจำตัว", "-"))
@@ -1252,7 +1253,7 @@ with st.container(border=True):
             
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
-                    excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                    excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 177", data=excel_177, file_name=f"177_{sel_name}.xlsx", use_container_width=True)
@@ -1261,7 +1262,7 @@ with st.container(border=True):
                         
             with col_btn2:
                 if st.button(f"🎉 ออกใบเบิก 178 (วันหยุด)", use_container_width=True):
-                    excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                    excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_178:
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 178", data=excel_178, file_name=f"178_{sel_name}.xlsx", use_container_width=True)
@@ -1270,7 +1271,7 @@ with st.container(border=True):
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
-                    excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                    excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_work:
                         st.success(f"สร้างรายงานปฏิบัติงาน เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดรายงานฯ", data=excel_work, file_name=f"รายงานปฏิบัติงาน_{sel_name}.xlsx", use_container_width=True)
@@ -1281,15 +1282,15 @@ with st.container(border=True):
                 with st.spinner("กำลังแพ็กไฟล์..."):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        excel_177 = generate_177(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                        excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_177:
                             zip_file.writestr(f"177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                        excel_178 = generate_178(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                        excel_178 = generate_178(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_178:
                             zip_file.writestr(f"178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                        excel_work = generate_report_work(st.session_state.employees.get(selected_key_177), roster_dict, global_data, export_ind, num_days)
+                        excel_work = generate_report_work(selected_key_177, roster_dict, global_data, export_ind, num_days)
                         if excel_work:
                             zip_file.writestr(f"รายงานปฏิบัติงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
@@ -1347,13 +1348,13 @@ with st.container(border=True):
                                 "val_6": batch_val_6
                             }
                             
-                            excel_177 = generate_177(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
+                            excel_177 = generate_177(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_177: zip_file.writestr(f"ใบเบิก_177/177_{sel_name}.xlsx", excel_177.getvalue())
                             
-                            excel_178 = generate_178(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
+                            excel_178 = generate_178(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
                             
-                            excel_work = generate_report_work(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
+                            excel_work = generate_report_work(unique_key, roster_dict, global_data, export_ind, num_days)
                             if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
                             
                     st.session_state["batch_zip_export"] = zip_buffer.getvalue()
