@@ -164,7 +164,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
             
     with st.container(border=True):
         st.warning("🔒 **ยังไม่มีข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์เพื่อเริ่มต้น**")
-        uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์ 'ข้อมูล.xlsx' ของสถานีคุณ", type=["xlsx"])
+        uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์ฐานข้อมูลพนักงาน (เช่น ข้อมูล_2.xlsx)", type=["xlsx"])
         
         if uploaded_emp_file is not None:
             try:
@@ -197,6 +197,10 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                     acc2_raw = str(row.get("รหัสบัญชี2", "-")) if pd.notna(row.get("รหัสบัญชี2")) else "-"
                     if acc2_raw.endswith(".0"): acc2_raw = acc2_raw[:-2]
                     
+                    # 📌 ตรวจจับคอลัมน์ "กลุ่ม" จากไฟล์ Excel
+                    group_raw = str(row.get("กลุ่ม", "")).strip()
+                    if group_raw == "nan" or not group_raw: group_raw = role
+                    
                     unique_key = f"{name}_{role}"
                     emp_dict[unique_key] = {
                         "ชื่อ-สกุล": name, "ตำแหน่ง": pos, 
@@ -206,6 +210,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
                         "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
                         "รหัสบัญชี": acc1_raw,
                         "รหัสบัญชี2": acc2_raw,
+                        "กลุ่ม": group_raw,
                         "Role": role, "is_regular": True 
                     }
                 st.session_state.employees = emp_dict
@@ -238,22 +243,36 @@ shift_data = {
 leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 
+# 📌 อัปเกรดตรรกะการจัดเรียงพนักงาน โดยใช้ "กลุ่ม" เป็นตัวแบ่งแยก และดึงคนใหม่ไปต่อท้าย
 def sort_roster_by_role(df, emp_dict):
     temp_df = df.copy()
-    role_last_idx = {}
-    for idx, row in temp_df.iterrows():
-        name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
-        info = emp_dict.get(f"{name}_{role}", {})
-        if info.get('is_regular', False): role_last_idx[role] = idx
-            
+    
+    group_order = {}
+    g_idx = 0
+    # จดจำลำดับ "กลุ่ม" ตามข้อมูลใน Excel ต้นฉบับ
+    for k, v in emp_dict.items():
+        if v.get('is_regular', False):
+            g = v.get('กลุ่ม', v.get('Role', 'อื่นๆ'))
+            if g not in group_order:
+                group_order[g] = g_idx
+                g_idx += 1
+                
     def get_sort_key(row):
         name, role = str(row['ชื่อ-สกุล']).strip(), str(row['Role (หน้าที่)']).strip()
         info = emp_dict.get(f"{name}_{role}", {})
-        if info.get('is_regular', False): return row.name * 1000 
-        else:
-            if role in role_last_idx: return role_last_idx[role] * 1000 + row.name + 1 
-            else: return 999000 + row.name 
-                
+        
+        group = info.get('กลุ่ม', info.get('Role', 'อื่นๆ'))
+        is_reg = info.get('is_regular', False)
+        
+        # 1. เรียงตามลำดับกลุ่ม
+        order_1 = group_order.get(group, 999)
+        # 2. คนประจำ (0) มาก่อน คนมาแทน/เพิ่มใหม่ (1) ในกลุ่มเดียวกัน
+        order_2 = 0 if is_reg else 1
+        # 3. เรียงตาม Index เดิม (รักษาความเสถียร)
+        order_3 = row.name 
+        
+        return (order_1, order_2, order_3)
+        
     temp_df['sort_key'] = temp_df.apply(get_sort_key, axis=1)
     temp_df = temp_df.sort_values('sort_key').reset_index(drop=True)
     temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
@@ -270,7 +289,7 @@ if 'roster_df' not in st.session_state:
             if unique_key not in st.session_state.employees:
                  st.session_state.employees[unique_key] = {
                         "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
-                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "Role": role, "is_regular": False
+                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
                  }
     else:
         data = []
@@ -392,11 +411,20 @@ with st.container(border=True):
         
         with tab_add:
             with st.form("add_emp_form"):
-                c1, c2, c3, c4 = st.columns(4)
+                
+                # 📌 ดึงรายชื่อกลุ่มที่มีอยู่ในปัจจุบันมาให้เลือก (ไม่ให้หลุดกลุ่ม)
+                groups_list = list(dict.fromkeys([v.get("กลุ่ม", v.get("Role", "อื่นๆ")) for v in st.session_state.employees.values()]))
+                if not groups_list: groups_list = ["อื่นๆ"]
+                
+                c1, c2, c3 = st.columns(3)
                 new_name = c1.text_input("ชื่อ-สกุล*")
                 new_pos = c2.text_input("ตำแหน่งเบิก*")
                 new_role = c3.selectbox("Role (หน้าที่)", roles_list)
-                new_rate = c4.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
+                
+                c4, c5 = st.columns(2)
+                # 📌 เลือกกลุ่มที่จะให้พนักงานคนใหม่นี้ไปต่อท้าย
+                new_group = c4.selectbox("กลุ่ม (เพื่อจัดเรียงต่อท้ายคนประจำ)", groups_list)
+                new_rate = c5.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
                 
                 if st.form_submit_button("บันทึกข้อมูลพนักงาน", type="primary"):
                     if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
@@ -414,6 +442,7 @@ with st.container(border=True):
                             "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
                             "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
                             "รหัสบัญชี2": old_data.get("รหัสบัญชี2", "-"), 
+                            "กลุ่ม": new_group,  # บันทึกกลุ่มที่เลือก
                             "Role": new_role, "is_regular": old_data.get("is_regular", False)
                         }
                         
@@ -594,7 +623,6 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# 📌 อัปเดตตรรกะให้สลับตำแหน่ง [4] = ย และ [5] = วันในวงเล็บ ตามโครงสร้าง 178
 def extract_employee_stats(roster_row):
     weekly_worked_holidays = [] # วันในวงเล็บ (ที่ต้องมาทำงาน) [5]
     weekly_rest_holidays = []   # วันที่เป็น ย (ไม่ได้ทำงาน) [4]
@@ -606,10 +634,10 @@ def extract_employee_stats(roster_row):
         if "(" in val: is_in_period = True
         clean_val = val.replace("(", "").replace(")", "")
         
-        # วันหยุดที่ไม่ได้มาทำงาน (ย) -> ให้ไปอยู่กล่อง [4]
+        # วันหยุดที่ไม่ได้มาทำงาน (ย)
         if clean_val in ['ย', 'ย.']:
             weekly_rest_holidays.append(d)
-        # วันหยุดที่มาทำงาน (ในวงเล็บ) -> ให้ไปอยู่กล่อง [5]
+        # วันหยุดที่มาทำงาน (ในวงเล็บ)
         elif is_in_period and clean_val and clean_val not in ["พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "-"]:
             weekly_worked_holidays.append(d)
             
@@ -636,8 +664,8 @@ def extract_employee_stats(roster_row):
     worked_ranges = to_ranges(weekly_worked_holidays)
     rest_ranges = to_ranges(weekly_rest_holidays)
     
-    val_4 = ",".join(rest_ranges) if rest_ranges else "-"    # 📌 สลับ ย มาไว้ช่อง [4]
-    val_5 = ",".join(worked_ranges) if worked_ranges else "-" # 📌 สลับ วงเล็บ มาไว้ช่อง [5]
+    val_4 = ",".join(rest_ranges) if rest_ranges else "-"    
+    val_5 = ",".join(worked_ranges) if worked_ranges else "-" 
     
     total_weekly_holidays = len(weekly_worked_holidays) + len(weekly_rest_holidays)
     val_17 = f"{total_weekly_holidays:02d}"
@@ -930,7 +958,6 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
     public_holiday_count = 0
     is_in_weekly_period = False
     
-    # 📌 ใน 178 จะยึดวันทำงานวันหยุดจากตัวแปร [5] (ตัวที่อยู่ในวงเล็บ)
     def parse_holiday_string_to_set(day_str):
         holiday_set = set()
         if not day_str or day_str == "-": return holiday_set
@@ -947,7 +974,7 @@ def generate_178(unique_key, roster_data, global_vars, ind_vars, num_days):
                 holiday_set.add(int(p))
         return holiday_set
 
-    # ดึงวันที่ทำงานจาก [5] 
+    # 📌 ในใบ 178 ต้องเอาเฉพาะวันที่มาทำงาน (ซึ่งอยู่ในกล่อง [5]) มาใช้คิดเงิน
     manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
     for day in range(1, 32):
@@ -1218,7 +1245,6 @@ with st.container(border=True):
             
             with col_btn1:
                 if st.button(f"🧾 ออกใบเบิก 177 (ทำล่วงเวลา)", use_container_width=True):
-                    # 📌 แก้บั๊ก: ส่ง unique_key ที่เป็น string ตามที่ฟังก์ชันต้องการ (แก้ไข selected_key_177 กลับมา)
                     excel_177 = generate_177(selected_key_177, roster_dict, global_data, export_ind, num_days)
                     if excel_177:
                         st.success(f"สร้างใบเบิก 177 เสร็จสิ้น!")
