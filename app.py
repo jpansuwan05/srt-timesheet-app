@@ -336,7 +336,7 @@ if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.colu
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
 saved_global = local_storage.getItem("srt_global_data")
-default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}}
+default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}, "remarks_dict": {}}
 try:
     if saved_global: 
         parsed = json.loads(saved_global)
@@ -369,10 +369,13 @@ with st.expander("📖 คู่มือการใช้งานระบบ
     - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
     - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
     
-    **3. การจัดเรียงคนมาใหม่:**
+    **3. การพิมพ์หมายเหตุอัตโนมัติ:**
+    - เลื่อนไปตั้งค่าใน "📝 ตั้งค่าหมายเหตุอัตโนมัติ" (เช่น รหัส "อ" = อบรมตามคำสั่ง...) เมื่อคุณพิมพ์ "อ" ในตารางเวร ระบบจะนำข้อความนี้ไปใส่ในคอลัมน์หมายเหตุของใบต่างๆ ให้ทันที (เลือกเอกสารได้)
+    
+    **4. การจัดเรียงคนมาใหม่:**
     - หากตารางเรียงปนกัน ให้กดปุ่ม **"🗂️ จัดเรียงตารางใหม่"** ระบบจะดันคนมาใหม่ไปไว้ท้ายกลุ่มให้อัตโนมัติ
     
-    **4. การส่งออกเอกสาร (Export):**
+    **5. การส่งออกเอกสาร (Export):**
     - ไปที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
     - เลือกแท็บ **"ส่งออกแบบกลุ่ม"**
     - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
@@ -416,9 +419,62 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
+    # 📌 ส่วนเพิ่มหมายเหตุอัตโนมัติ (อัปเกรดให้เลือกเอกสารได้)
+    st.markdown("---")
+    st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (เลือกให้แสดงเฉพาะบางเอกสารได้)")
+    st.info("💡 กรอกรหัส แล้วติ๊กเลือกได้เลยว่าอยากให้หมายเหตุนี้ไปโผล่ที่ใบไหนบ้าง")
+    
+    old_rm = default_global.get("remarks_dict", {})
+    rm_list = []
+    
+    # ดึงค่าเก่ามาแสดง และปรับให้รองรับรูปแบบเก่า/ใหม่
+    for k, v in old_rm.items():
+        if isinstance(v, dict):
+            rm_list.append({
+                "รหัส (เช่น อ)": k, 
+                "ข้อความหมายเหตุ": v.get("text", ""),
+                "ลง 177": v.get("show_177", True),
+                "ลง 178": v.get("show_178", True),
+                "ลงรายงานฯ": v.get("show_report", False)
+            })
+        else:
+            rm_list.append({
+                "รหัส (เช่น อ)": k, 
+                "ข้อความหมายเหตุ": str(v),
+                "ลง 177": True,
+                "ลง 178": True,
+                "ลงรายงานฯ": False
+            })
+            
+    while len(rm_list) < 3:
+        rm_list.append({"รหัส (เช่น อ)": "", "ข้อความหมายเหตุ": "", "ลง 177": True, "ลง 178": True, "ลงรายงานฯ": False})
+        
+    df_rm = pd.DataFrame(rm_list)
+    
+    rm_col_config = {
+        "ลง 177": st.column_config.CheckboxColumn("ลง 177", default=True),
+        "ลง 178": st.column_config.CheckboxColumn("ลง 178", default=True),
+        "ลงรายงานฯ": st.column_config.CheckboxColumn("ลงรายงานฯ", default=False)
+    }
+    
+    edited_rm = st.data_editor(df_rm, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=rm_col_config, key="remarks_editor")
+    
+    remarks_dict = {}
+    for _, r in edited_rm.iterrows():
+        code = str(r.get("รหัส (เช่น อ)", "")).strip()
+        txt = str(r.get("ข้อความหมายเหตุ", "")).strip()
+        if code and code != "nan" and txt and txt != "nan":
+            remarks_dict[code] = {
+                "text": txt,
+                "show_177": bool(r.get("ลง 177", True)),
+                "show_178": bool(r.get("ลง 178", True)),
+                "show_report": bool(r.get("ลงรายงานฯ", False))
+            }
+
     global_data = {
         "val_13": val_13, "year_be": year_be, "val_7": val_7, 
-        "val_8": val_8, "val_14": val_14, "public_holidays_dict": ph_dict
+        "val_8": val_8, "val_14": val_14, "public_holidays_dict": ph_dict,
+        "remarks_dict": remarks_dict 
     }
     local_storage.setItem("srt_global_data", json.dumps(global_data), key=f"ls_global_{uuid.uuid4().hex}")
 
@@ -851,6 +907,9 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     try: wb = openpyxl.load_workbook("ใบ177 Update.xlsx")
     except: return None
     ws = wb.active
+    
+    remarks_dict = global_vars.get("remarks_dict", {}) 
+    
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info.get("รหัสบัญชี", "-"), "[15]": emp_info["ประเภทบัญชี"],
         "[14]": global_vars["val_14"], "[13]": global_vars["val_13"], 
@@ -902,6 +961,18 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         is_holiday = shift_clean in leave_types
         font_color = "FF0000" if is_holiday else "000000"
         
+        # 📌 เขียนหมายเหตุลงช่อง (คอลัมน์ 8) ตรวจสอบเงื่อนไขว่าอนุญาตให้ลง 177 ไหม
+        remark_data = remarks_dict.get(shift_clean)
+        remark_text = ""
+        if isinstance(remark_data, dict):
+            if remark_data.get("show_177", True):
+                remark_text = remark_data.get("text", "")
+        elif isinstance(remark_data, str):
+            remark_text = remark_data
+            
+        if remark_text:
+            set_cell_val_color(row, 8, remark_text, "000000")
+        
         if sData and sData["hours"] != "-":
             hours_val = int(sData["hours"])
             sum_hours += hours_val 
@@ -921,7 +992,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             for col in range(3, 8): 
                 set_cell_val_color(row, col, "-", font_color)
                     
-    # 📌 คำนวณยอดรวมใหม่ด้วยตัวเอง แล้วเขียนทับสูตร Excel
     grand_total_money = sum_hours * rate_val
     grand_total_baht = int(grand_total_money)
     grand_total_satang = int(round((grand_total_money - grand_total_baht) * 100))
@@ -963,6 +1033,7 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     ws = wb.active
     
     ph_dict_local = global_vars.get("public_holidays_dict", {})
+    remarks_dict = global_vars.get("remarks_dict", {}) 
     
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"], "[16]": emp_info.get("รหัสบัญชี2", "-"), "[15]": emp_info["ประเภทบัญชี"],
@@ -1031,6 +1102,19 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
+        # 📌 เขียนหมายเหตุลงช่อง (คอลัมน์ 11) ตรวจสอบเงื่อนไขว่าอนุญาตให้ลง 178 ไหม
+        remark_data = remarks_dict.get(shift_clean)
+        remark_text = ""
+        if isinstance(remark_data, dict):
+            if remark_data.get("show_178", True):
+                remark_text = remark_data.get("text", "")
+        elif isinstance(remark_data, str):
+            remark_text = remark_data
+            
+        if remark_text:
+            if type(ws.cell(row=row, column=11)).__name__ != 'MergedCell':
+                ws.cell(row=row, column=11).value = remark_text
+        
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
             is_weekly = day in manual_weekly_holidays
@@ -1098,6 +1182,8 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     try: wb = openpyxl.load_workbook("รายงานปฏิบัติงาน.xlsx")
     except: return None
     ws = wb.active
+    
+    remarks_dict = global_vars.get("remarks_dict", {}) 
 
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"],
@@ -1206,6 +1292,17 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
             if cell2: cell2.alignment = center_align
 
         apply_style(row, 8, emp_info["ตำแหน่ง"] if start_time not in ["-", ""] and not is_holiday else "", "000000")
+        
+        # 📌 เขียนหมายเหตุลงในรายงานปฏิบัติงาน (ใส่ไปที่คอลัมน์ 10 เพื่อไม่ให้กระทบคอลัมน์หลัก)
+        shift_clean = shift_raw.replace("(", "").replace(")", "")
+        remark_data = remarks_dict.get(shift_clean)
+        remark_text = ""
+        if isinstance(remark_data, dict):
+            if remark_data.get("show_report", False):
+                remark_text = remark_data.get("text", "")
+                
+        if remark_text:
+            apply_style(row, 10, remark_text, "000000")
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
