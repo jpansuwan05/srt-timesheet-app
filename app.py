@@ -77,42 +77,166 @@ def get_thai_baht_text(number):
     return text
 
 # ==========================================
-# ✨ เวทมนตร์ CSS แต่งหน้าตา Web App ให้ดู Modern
+# ✨ เวทมนตร์ CSS ระดับ Modern UI / Neumorphism
 # ==========================================
 st.markdown("""
     <style>
-        div[data-testid="metric-container"] {
-            background-color: #f8f9fa;
-            border-radius: 15px;
-            padding: 15px 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-left: 6px solid #FF4B4B;
-            transition: transform 0.2s ease;
+        @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
+
+        /* เปลี่ยนฟอนต์ทั้งหน้าเว็บ */
+        html, body, [class*="css"], .stMarkdown, .stText, p, span, h1, h2, h3, h4, h5, h6 {
+            font-family: 'Prompt', sans-serif !important;
         }
-        div[data-testid="metric-container"]:hover {
-            transform: scale(1.02);
+
+        /* พื้นหลังหลัก */
+        .stApp {
+            background-color: #f7f9fc;
         }
-        div.stButton > button {
-            border-radius: 10px;
-            font-weight: 600;
+
+        /* ตกแต่ง Header */
+        h1 {
+            font-weight: 600 !important;
+            color: #2c3e50 !important;
+            text-align: center;
+            padding-bottom: 20px;
+        }
+
+        /* ตกแต่ง Card / Container */
+        div[data-testid="stVerticalBlock"] > div[style*="border"] {
+            background: #ffffff !important;
+            border: none !important;
+            border-radius: 24px !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04) !important;
+            padding: 30px !important;
+            margin-bottom: 24px !important;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        /* ปุ่มกด (Buttons) */
+        div.stButton > button {
+            border-radius: 12px;
+            font-weight: 500;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid #e2e8f0;
+            color: #4a5568;
+        }
+        div.stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 15px rgba(255, 75, 43, 0.3);
+        }
+        div.stButton > button[kind="primary"]:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(255, 75, 43, 0.4);
+            color: white;
+            border: none;
         }
         div.stButton > button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
+            border-color: #FF4B2B;
+            color: #FF4B2B;
         }
-        div[data-testid="stVerticalBlock"] > div[style*="border"] {
-            border-radius: 15px !important;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
-            border: 1px solid #f0f2f6 !important;
-            padding: 20px !important;
-            background-color: #ffffff;
+
+        /* Metric Dashboard (ยอดสรุป) */
+        div[data-testid="metric-container"] {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+            border-left: 0px;
+            border-top: 5px solid #FF4B2B;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            text-align: center;
         }
+        div[data-testid="metric-container"]:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+        }
+        div[data-testid="metric-container"] label {
+            font-weight: 500;
+            color: #7f8c8d;
+        }
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        /* แท็บเมนู (Tabs) */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 10px;
+            background-color: #edf2f7;
+            padding: 8px 10px;
+            border-radius: 16px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: white !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            color: #FF4B2B !important;
+        }
+
+        /* ช่องกรอกข้อมูล (Inputs & Select) */
+        .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+            border-radius: 12px !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: none !important;
+        }
+        .stTextInput input:focus, .stNumberInput input:focus, .stSelectbox div[data-baseweb="select"]:focus {
+            border-color: #FF4B2B !important;
+        }
+
+        /* เมนูแบบพับ (Expanders) */
         div[data-testid="stExpander"] {
-            border-radius: 10px !important;
-            border: 1px solid #e9ecef !important;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
+            border-radius: 16px !important;
+            border: 1px solid #edf2f7 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important;
+            background: white;
+        }
+        div[data-testid="stExpander"] summary {
+            font-weight: 500;
+        }
+
+        /* โหมดมืด (Dark Mode Overrides) */
+        @media (prefers-color-scheme: dark) {
+            h1 { color: #f8f9fa !important; }
+            .stApp { background-color: #0b0f19; }
+            div[data-testid="stVerticalBlock"] > div[style*="border"] { 
+                background: #111827 !important; 
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important; 
+                border: 1px solid #1f2937 !important;
+            }
+            div[data-testid="metric-container"] { 
+                background: #111827; 
+                border-top: 5px solid #FF416C; 
+            }
+            div[data-testid="metric-container"] label { color: #9ca3af; }
+            div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #f3f4f6; }
+            .stTabs [data-baseweb="tab-list"] { background-color: #1f2937; }
+            .stTabs [aria-selected="true"] { 
+                background-color: #374151 !important; 
+                color: #FF416C !important; 
+            }
+            div[data-testid="stExpander"] { 
+                background: #111827; 
+                border-color: #1f2937 !important; 
+            }
+            .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] { 
+                border-color: #374151 !important; 
+                background-color: #111827 !important; 
+                color: #f3f4f6 !important;
+            }
+            div.stButton > button {
+                background: #1f2937;
+                color: #f3f4f6;
+                border-color: #374151;
+            }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -445,7 +569,7 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
-    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติ
+    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติแบบใหม่
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (จะนำไปพิมพ์รวบยอดไว้ใต้คำว่า 'หมายเหตุ')")
     st.info("💡 ตัวอย่าง: รหัส `อ`, เหตุผล `อบรมฯ`, อ้างอิงคำสั่ง `รฟ.ตร.5110/3745/2569 ลว. 04 ส.ค.69`")
@@ -673,7 +797,6 @@ with st.container(border=True):
                     st.session_state.employees[key]['ชื่อ-สกุล'] = name
                     st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
             
-            # สั่งรีเฟรชทีเดียวเมื่อกดปุ่มบันทึกเสร็จ
             st.rerun()
 
 # ==========================================
