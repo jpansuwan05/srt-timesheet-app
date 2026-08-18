@@ -77,7 +77,7 @@ def get_thai_baht_text(number):
     return text
 
 # ==========================================
-# ✨ เวทมนตร์ CSS ปรับให้รองรับทั้งโหมดมืดและสว่าง (แก้บั๊กไอคอน)
+# ✨ เวทมนตร์ CSS ปรับให้รองรับทั้งโหมดมืดและสว่าง
 # ==========================================
 st.markdown("""
     <style>
@@ -235,7 +235,6 @@ def sort_roster_by_role(df, emp_dict):
 # 1. เมนูแถบด้านข้าง (Sidebar)
 # ==========================================
 with st.sidebar:
-    # 📌 เปลี่ยนจากโหลดรูปที่พัง เป็นข้อความสวยๆ
     st.markdown("## 🚂 เมนูหลัก")
     st.markdown("---")
     
@@ -637,26 +636,31 @@ with st.container(border=True):
                     st.success(f"ลบรายชื่อ {del_name} ออกจากตารางเรียบร้อยแล้ว!")
                     st.rerun()
 
+    # 📌 สร้าง column_config โชว์แค่วันที่มีจริงในเดือนนั้น
     column_config = {
         "ขึ้นหน้าใหม่": st.column_config.CheckboxColumn("ขึ้นหน้าใหม่", width="small"),
         "ลำดับ": st.column_config.NumberColumn("ลำดับ", width="small", disabled=True),
-        "ชื่อ-สกุล": st.column_config.TextColumn("ชื่อ-สกุล", width="medium"), 
         "ตำแหน่งเบิก": st.column_config.TextColumn("ตำแหน่งเบิก", width="medium"), 
         "Role (หน้าที่)": st.column_config.SelectboxColumn("Role", options=roles_list, width="small")
     }
-    for d in range(1, 32): 
-        if d <= num_days:
-            column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
-        else:
-            column_config[str(d)] = st.column_config.TextColumn(f"{d} (ไม่มี)", width="small", disabled=True)
+    
+    # 📌 จัดเตรียมคอลัมน์ที่จะแสดง (ซ่อนวันที่เกิน)
+    display_cols = ["ขึ้นหน้าใหม่", "ลำดับ", "ตำแหน่งเบิก", "Role (หน้าที่)"]
+    for d in range(1, num_days + 1):
+        column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
+        display_cols.append(str(d))
 
-    # 📌 ครอบตารางด้วยฟอร์ม ป้องกันการรีเฟรชรบกวนการพิมพ์
     with st.form("roster_data_form"):
         st.info("💡 **พิมพ์รหัสเวรได้อย่างลื่นไหลเหมือน Excel !** เมื่อคุณพิมพ์เสร็จทั้งหมดแล้ว ให้กดปุ่ม **'💾 บันทึกตารางเวร'** ด้านล่างสุด เพื่อบันทึกข้อมูลและตรวจสอบครับ")
+        st.success(f"🔒 คอลัมน์ 'ชื่อ-สกุล' ถูกแช่แข็งไว้ให้อยู่กับที่แล้ว และ **ซ่อนวันที่เกินจากเดือน {val_13} ({num_days} วัน) ออกให้เพื่อความสบายตาครับ**")
         
-        edited_df = st.data_editor(
-            st.session_state.roster_df, 
-            hide_index=True, 
+        display_df = st.session_state.roster_df.copy()
+        display_df = display_df.set_index("ชื่อ-สกุล")
+
+        # 📌 โยนข้อมูลไปวาดตารางเฉพาะคอลัมน์ที่มีในเดือนนั้น
+        edited_display_df = st.data_editor(
+            display_df[display_cols], 
+            hide_index=False, 
             use_container_width=True, 
             column_config=column_config, 
             num_rows="dynamic",
@@ -666,6 +670,24 @@ with st.container(border=True):
         submit_roster = st.form_submit_button("💾 บันทึกตารางเวรและตรวจสอบความถูกต้อง", type="primary", use_container_width=True)
         
         if submit_roster:
+            edited_df = edited_display_df.reset_index()
+            
+            # 📌 เติมคอลัมน์วันที่หายไป (เช่น 31) ให้กลับมาครบ 31 วัน เพื่อรักษาโครงสร้างข้อมูลก่อนเซฟ
+            for d in range(num_days + 1, 32):
+                d_str = str(d)
+                col_data = [""] * len(edited_df)
+                existing_len = min(len(st.session_state.roster_df), len(edited_df))
+                for idx in range(existing_len):
+                    col_data[idx] = st.session_state.roster_df.iloc[idx].get(d_str, "")
+                edited_df[d_str] = col_data
+
+            # 📌 จัดเรียงคอลัมน์ให้กลับมาลำดับเดิมเป๊ะๆ 
+            expected_cols = list(st.session_state.roster_df.columns)
+            for c in expected_cols:
+                if c not in edited_df.columns:
+                    edited_df[c] = ""
+            edited_df = edited_df[expected_cols]
+
             for d in range(1, 32):
                 d_str = str(d)
                 if d_str in edited_df.columns:
@@ -963,7 +985,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output
+    return output, total_pages
 
 def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
@@ -1023,9 +1045,12 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     
     for day in range(1, 32):
         row = start_row + day - 1
+        
+        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
-            set_cell_val_color(row, 2, "", "000000")
-            for col in range(3, 8): set_cell_val_color(row, col, "", "000000")
+            set_cell_val_color(row, 1, "", "000000") # ลบวันที่
+            set_cell_val_color(row, 2, "", "000000") # ลบเวลา
+            for col in range(3, 10): set_cell_val_color(row, col, "", "000000") # ลบข้อมูลและหมายเหตุ
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
@@ -1202,12 +1227,13 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         row = start_row + day
         ws.cell(row=row, column=1).value = str(day) 
         
-        for col in range(2, 11):
+        for col in range(2, 12):
             if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                 ws.cell(row=row, column=col).value = None
 
+        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
-            ws.cell(row=row, column=1).value = ""
+            ws.cell(row=row, column=1).value = "" # ลบวันที่ออก
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
@@ -1385,12 +1411,15 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     for day in range(1, 32):
         row = start_row + day - 1
         
+        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
+            apply_style(row, 1, "", "000000") # ลบวันที่ออก
             for c in range(2, 8): 
                 cell = ws.cell(row=row, column=c)
                 cell.value = None
                 cell.border = thin_border
             apply_style(row, 8, "", "000000")
+            apply_style(row, 10, "", "000000")
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
