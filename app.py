@@ -77,14 +77,14 @@ def get_thai_baht_text(number):
     return text
 
 # ==========================================
-# ✨ เวทมนตร์ CSS ปรับให้รองรับทั้งโหมดมืดและสว่าง
+# ✨ เวทมนตร์ CSS ปรับให้รองรับทั้งโหมดมืดและสว่าง (แก้บั๊กไอคอน)
 # ==========================================
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
 
-        /* เปลี่ยนฟอนต์ทั้งหน้าเว็บ */
-        html, body, [class*="css"], .stMarkdown, .stText, p, span, h1, h2, h3, h4, h5, h6, button, input, select {
+        /* ใส่ฟอนต์เฉพาะส่วนที่เป็นข้อความ ป้องกันการทับไอคอนของระบบ */
+        p, h1, h2, h3, h4, h5, h6, li, label, div.stMarkdown, input, textarea, select {
             font-family: 'Prompt', sans-serif !important;
         }
 
@@ -99,6 +99,7 @@ st.markdown("""
 
         /* ปุ่มกด (Buttons) */
         div.stButton > button {
+            font-family: 'Prompt', sans-serif !important;
             border-radius: 12px !important;
             font-weight: 500 !important;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -234,7 +235,10 @@ def sort_roster_by_role(df, emp_dict):
 # 1. เมนูแถบด้านข้าง (Sidebar)
 # ==========================================
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/th/thumb/7/77/State_Railway_of_Thailand_logo.png/200px-State_Railway_of_Thailand_logo.png", width=120)
+    # 📌 เปลี่ยนจากโหลดรูปที่พัง เป็นข้อความสวยๆ
+    st.markdown("## 🚂 เมนูหลัก")
+    st.markdown("---")
+    
     st.markdown("### 🔄 เริ่มต้นเดือนใหม่")
     if st.button("🗑️ ล้างข้อมูล (อัปโหลดรายชื่อใหม่)", type="primary", use_container_width=True):
         for key in list(st.session_state.keys()):
@@ -959,7 +963,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output, total_pages
+    return output
 
 def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
