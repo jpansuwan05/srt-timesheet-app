@@ -378,6 +378,7 @@ with st.expander("📖 คู่มือการใช้งานระบบ
     **5. การส่งออกเอกสาร (Export):**
     - ไปที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
     - เลือกแท็บ **"ส่งออกแบบกลุ่ม"**
+    - สามารถกด **"ดูสรุปยอดเงิน"** ก่อนเพื่อตรวจสอบความถูกต้องได้
     - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
     """)
 
@@ -419,7 +420,6 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
-    # 📌 ส่วนเพิ่มหมายเหตุอัตโนมัติ (อัปเกรดให้เลือกเอกสารได้)
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (เลือกให้แสดงเฉพาะบางเอกสารได้)")
     st.info("💡 กรอกรหัส แล้วติ๊กเลือกได้เลยว่าอยากให้หมายเหตุนี้ไปโผล่ที่ใบไหนบ้าง")
@@ -427,7 +427,6 @@ with st.container(border=True):
     old_rm = default_global.get("remarks_dict", {})
     rm_list = []
     
-    # ดึงค่าเก่ามาแสดง และปรับให้รองรับรูปแบบเก่า/ใหม่
     for k, v in old_rm.items():
         if isinstance(v, dict):
             rm_list.append({
@@ -890,7 +889,7 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    return output, total_pages
+    return output
 
 def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     if not emp_info: return None
@@ -961,7 +960,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         is_holiday = shift_clean in leave_types
         font_color = "FF0000" if is_holiday else "000000"
         
-        # 📌 เขียนหมายเหตุลงช่อง (คอลัมน์ 8) ตรวจสอบเงื่อนไขว่าอนุญาตให้ลง 177 ไหม
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
         if isinstance(remark_data, dict):
@@ -1102,7 +1100,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # 📌 เขียนหมายเหตุลงช่อง (คอลัมน์ 11) ตรวจสอบเงื่อนไขว่าอนุญาตให้ลง 178 ไหม
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
         if isinstance(remark_data, dict):
@@ -1293,7 +1290,6 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 
         apply_style(row, 8, emp_info["ตำแหน่ง"] if start_time not in ["-", ""] and not is_holiday else "", "000000")
         
-        # 📌 เขียนหมายเหตุลงในรายงานปฏิบัติงาน (ใส่ไปที่คอลัมน์ 10 เพื่อไม่ให้กระทบคอลัมน์หลัก)
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
@@ -1450,6 +1446,52 @@ with st.container(border=True):
             selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options, default=all_emp_options)
         else:
             selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options)
+            
+        with st.expander("🔍 กดเพื่อดูสรุปยอดเงินและชั่วโมงของทุกคน (Preview ก่อนพิมพ์)"):
+            if st.button("📊 คำนวณสรุปยอดทั้งหมด", use_container_width=True):
+                summary_list = []
+                for emp_display in selected_batch_emps:
+                    sel_name = emp_display.split(" (")[0]
+                    sel_role = emp_display.split(" (")[1].replace(")", "")
+                    unique_key = f"{sel_name}_{sel_role}"
+                    emp_info = st.session_state.employees.get(unique_key)
+                    
+                    if not emp_info: continue
+                    
+                    try:
+                        emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
+                    except:
+                        continue
+                    
+                    rate_val = float(emp_info["เรท"]) if emp_info.get("เรท") else 0.0
+                    
+                    sum_hours = 0
+                    for d in range(1, num_days + 1):
+                        shift_raw = str(emp_row.get(str(d), "")).strip()
+                        shift_clean = shift_raw.replace("(", "").replace(")", "")
+                        sData = shift_data.get(shift_clean)
+                        if sData and sData.get("hours", "-") != "-":
+                            sum_hours += int(sData["hours"])
+                            
+                    total_money = sum_hours * rate_val
+                    
+                    roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
+                    val_4, val_5, val_17, _, _, _, _ = extract_employee_stats(roster_dict)
+                    
+                    summary_list.append({
+                        "ชื่อ-สกุล": emp_info["ชื่อ-สกุล"],
+                        "ตำแหน่ง": emp_info["Role"],
+                        "เรท/ชม.": f"{rate_val:,.2f}",
+                        "รวมชั่วโมง (177)": sum_hours,
+                        "รวมเงิน 177 (บาท)": f"{total_money:,.2f}",
+                        "วันหยุดมาทำ (178)": val_5,
+                        "รวมวันหยุดทั้งเดือน": val_17
+                    })
+                    
+                if summary_list:
+                    st.dataframe(pd.DataFrame(summary_list), use_container_width=True)
+                else:
+                    st.warning("ไม่มีข้อมูลให้สรุป หรือยังไม่ได้เลือกพนักงานครับ")
             
         if st.button("📦 สร้างไฟล์ ZIP ส่งออกแบบกลุ่ม", type="primary", use_container_width=True):
             if not selected_batch_emps:
