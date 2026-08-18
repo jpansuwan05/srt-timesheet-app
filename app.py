@@ -19,8 +19,7 @@ st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wid
 # ==========================================
 # 📌 0. ข้อมูลตั้งต้นที่สำคัญมาก (Global Variables)
 # ==========================================
-# เพิ่ม อ, อ. เข้าไปในหมวดหมู่ที่ไม่ได้ทำงานปกติ
-leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "อ", "อ."]
+leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 shift_data = {
     "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
@@ -37,7 +36,6 @@ shift_data = {
     "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
     "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
-    "อ": {"text": "อ.", "hours": "-"}, "อ.": {"text": "อ.", "hours": "-"} # เพิ่มรหัสอบรม
 }
 
 # 📌 ฟังก์ชันแปลงตัวเลขเป็นตัวอักษรภาษาไทย
@@ -419,7 +417,7 @@ with st.expander("📖 คู่มือการใช้งานระบบ
     - **ทำงานปกติ:** `ว`, `ค`, `ว/ค`, `ค/ว`, `00-12`, `12-24`, `00-24`
     - **วันหยุดประจำสัปดาห์ที่มาทำงาน (เบิก 178):** ให้ใส่วงเล็บเปิด `(` ในวันที่เริ่มหยุด และวงเล็บปิด `)` ในวันสุดท้าย (เช่น `(ว` ... `ว)`)
     - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
-    - **วันลาพักผ่อน/ไปอบรม/ไปศาล:** พิมพ์รหัส `พ`, `อ`, `น`
+    - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
     
     **3. การพิมพ์หมายเหตุอัตโนมัติ:**
     - เลื่อนไปตั้งค่าใน "📝 ตั้งค่าหมายเหตุอัตโนมัติ" (เช่น รหัส "อ") ระบบจะรวบรวมวันที่ทั้งหมด แล้วพิมพ์ลงใต้คำว่า 'หมายเหตุ' ให้แบบสวยงาม ไม่ซ้ำซ้อน
@@ -630,66 +628,6 @@ with st.container(border=True):
                     local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
                     st.success(f"ลบรายชื่อ {del_name} ออกจากตารางเรียบร้อยแล้ว!")
                     st.rerun()
-
-    # ==========================================
-    # 🔄 ระบบ Smart Matching จัดคนเข้าเวรแทน
-    # ==========================================
-    st.markdown("---")
-    st.subheader("🔄 3. ผู้ช่วยจัดคนเข้าเวรแทน (Smart Matching)")
-    with st.expander("คลิกเพื่อเปิดระบบจัดเวรแทนอัตโนมัติ", expanded=True):
-        st.info("💡 ระบบจะสแกนหาวันที่พนักงานประจำไม่สามารถปฏิบัติงานได้ (เช่น ย, พ, ป, ล, อ, น) ให้คุณเลือกคนไปเสียบแทนได้ทันทีโดยไม่ต้องเลื่อนตารางหาเอง")
-        
-        leave_records = []
-        for idx, row in st.session_state.roster_df.iterrows():
-            name = str(row.get("ชื่อ-สกุล", "")).strip()
-            role = str(row.get("Role (หน้าที่)", "")).strip()
-            if not name: continue
-            
-            absent_days = []
-            for d in range(1, num_days + 1):
-                val = str(row.get(str(d), "")).strip().replace("(", "").replace(")", "")
-                if val in leave_types:
-                    absent_days.append(d)
-            
-            if absent_days:
-                leave_records.append({"name": name, "role": role, "days": absent_days})
-                
-        if not leave_records:
-            st.success("🎉 ไม่พบพนักงานที่ลาหยุดหรือไปทำภารกิจอื่นในเดือนนี้")
-        else:
-            c1, c2, c3, c4 = st.columns(4)
-            leave_options = [f"{r['name']} ({r['role']})" for r in leave_records]
-            
-            with c1:
-                target_absentee = st.selectbox("1. เลือกคนที่ลาหยุด/ไปอบรม", leave_options)
-            
-            if target_absentee:
-                sel_name = target_absentee.split(" (")[0]
-                days_list = next((r['days'] for r in leave_records if r['name'] == sel_name), [])
-                
-                with c2:
-                    selected_days = st.multiselect("2. เลือกวันที่ต้องการให้มาแทน", days_list, default=days_list, help="สามารถกด x ลบออกได้ หากให้มาแทนแค่บางวัน")
-                
-                with c3:
-                    substitute_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows() if r['ชื่อ-สกุล'] != sel_name]
-                    selected_substitute = st.selectbox("3. เลือกคนมาแทน", substitute_options)
-                
-                with c4:
-                    shift_codes = ["ว", "ค", "ว/ค", "ค/ว", "00-12", "12-24", "00-24", "(ว)", "(ค)", "(ว/ค)", "(ค/ว)"]
-                    selected_shift = st.selectbox("4. เลือกรหัสเวร", shift_codes)
-                
-                if st.button("✨ ยืนยันการจัดคนลงเวรแทน", type="primary", use_container_width=True):
-                    if selected_days and selected_substitute:
-                        sub_name = selected_substitute.split(" (")[0]
-                        sub_idx = st.session_state.roster_df[st.session_state.roster_df['ชื่อ-สกุล'] == sub_name].index
-                        if not sub_idx.empty:
-                            for d in selected_days:
-                                st.session_state.roster_df.loc[sub_idx[0], str(d)] = selected_shift
-                            save_roster_to_local(st.session_state.roster_df)
-                            st.success(f"✅ จัด '{sub_name}' ลงเวรแทนในวันที่ {', '.join(map(str, selected_days))} เรียบร้อยแล้ว! (ข้อมูลอัปเดตลงตารางด้านล่างแล้ว)")
-                            st.rerun()
-                    else:
-                        st.warning("⚠️ กรุณาเลือกวันที่ และ คนมาแทน ให้ครบถ้วน")
 
     # 📌 จัดเตรียมคอลัมน์ที่จะแสดงบนหน้าเว็บ (ซ่อนวันที่เกินออกให้หมด)
     column_config = {
@@ -1099,10 +1037,11 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     for day in range(1, 32):
         row = start_row + day - 1
         
+        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาดหมดจด (ลบเฉพาะคอลัมน์ 1 ถึง 7, ปลอดภัยต่อหมายเหตุ)
         if day > num_days:
-            set_cell_val_color(row, 1, "", "000000") 
-            set_cell_val_color(row, 2, "", "000000") 
-            for col in range(3, 8): set_cell_val_color(row, col, "", "000000") 
+            set_cell_val_color(row, 1, "", "000000") # ลบวันที่
+            set_cell_val_color(row, 2, "", "000000") # ลบเวลา
+            for col in range(3, 8): set_cell_val_color(row, col, "", "000000") # ลบชั่วโมงและเงิน
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
@@ -1278,14 +1217,15 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     for day in range(1, 32):
         row = start_row + day
         
+        # 📌 เคลียร์เฉพาะช่องข้อมูล (คอลัมน์ 1 ถึง 10) ห้ามยุ่งกับคอลัมน์ 11-12
         for col in range(1, 11):
             if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                 ws.cell(row=row, column=col).value = None
 
         if day > num_days:
-            continue 
+            continue # ไม่เขียนวันที่ลงไป ทำให้ช่องว่างสะอาด
             
-        ws.cell(row=row, column=1).value = str(day) 
+        ws.cell(row=row, column=1).value = str(day) # เขียนวันที่
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
         if "(" in shift_raw: is_in_weekly_period = True
@@ -1462,13 +1402,14 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     for day in range(1, 32):
         row = start_row + day - 1
         
+        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
-            apply_style(row, 1, "", "000000") 
-            for c in range(2, 11): 
+            apply_style(row, 1, "", "000000") # ลบวันที่ออก
+            for c in range(2, 8): 
                 cell = ws.cell(row=row, column=c)
-                if type(cell).__name__ != 'MergedCell':
-                    cell.value = None
-                    cell.border = thin_border
+                cell.value = None
+                cell.border = thin_border
+            apply_style(row, 8, "", "000000") # ลบหน้าที่
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
