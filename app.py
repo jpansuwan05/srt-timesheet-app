@@ -342,6 +342,30 @@ year_ce = default_year - 543
 first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 
 # ==========================================
+# 📖 คู่มือการใช้งานระบบ 
+# ==========================================
+with st.expander("📖 คู่มือการใช้งานระบบ (คลิกเพื่ออ่านคำแนะนำ)"):
+    st.markdown("""
+    **1. การตั้งค่าเริ่มต้น:**
+    - อัปโหลดไฟล์ `ข้อมูล_2.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
+    - สามารถเปลี่ยนเดือน, ปี พ.ศ., และกำหนดวันหยุดนักขัตฤกษ์ได้ในส่วน "ตั้งค่าข้อมูลส่วนกลาง"
+    
+    **2. การพิมพ์รหัสในตารางเวร (Master Data):**
+    - **ทำงานปกติ:** `ว`, `ค`, `ว/ค`, `ค/ว`, `00-12`, `12-24`, `00-24`
+    - **วันหยุดประจำสัปดาห์ที่มาทำงาน (เบิก 178):** ให้ใส่วงเล็บเปิด `(` ในวันที่เริ่มหยุด และวงเล็บปิด `)` ในวันสุดท้าย (เช่น `(ว` ... `ว)`)
+    - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
+    - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
+    
+    **3. การพิมพ์หมายเหตุอัตโนมัติ:**
+    - เลื่อนไปตั้งค่าใน "📝 ตั้งค่าหมายเหตุอัตโนมัติ" (เช่น รหัส "อ") ระบบจะรวบรวมวันที่ทั้งหมด แล้วพิมพ์ลงใต้คำว่า 'หมายเหตุ' ให้แบบสวยงาม ไม่ซ้ำซ้อน
+    
+    **4. การส่งออกเอกสาร (Export):**
+    - ไปที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
+    - เลือกแท็บ **"ส่งออกแบบกลุ่ม"**
+    - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
+    """)
+
+# ==========================================
 # 4. ตั้งค่าส่วนกลาง & ตารางเวร
 # ==========================================
 with st.container(border=True):
@@ -379,10 +403,10 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
-    # 📌 ส่วนเพิ่มหมายเหตุอัตโนมัติ (อัปเกรดให้เลือกเอกสารได้)
+    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติแบบใหม่ (แยกคำอธิบาย และ เลขที่คำสั่ง)
     st.markdown("---")
-    st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (เลือกให้แสดงเฉพาะบางเอกสารได้)")
-    st.info("💡 เมื่อพบรหัสที่ระบุ ระบบจะพิมพ์ข้อความสรุปไว้ **ใต้คำว่า 'หมายเหตุ'** ที่ด้านล่างสุดของใบ 177 และ 178 ให้ครั้งเดียวครับ")
+    st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (จะนำไปพิมพ์รวบยอดไว้ใต้คำว่า 'หมายเหตุ')")
+    st.info("💡 ตัวอย่าง: รหัส `อ`, เหตุผล `อบรมฯ`, อ้างอิงคำสั่ง `รฟ.ตร.5110/3745/2569 ลว. 04 ส.ค.69`")
     
     old_rm = default_global.get("remarks_dict", {})
     rm_list = []
@@ -390,27 +414,32 @@ with st.container(border=True):
     for k, v in old_rm.items():
         if isinstance(v, dict):
             rm_list.append({
-                "รหัส (เช่น อ)": k, 
-                "ข้อความหมายเหตุ": v.get("text", ""),
+                "รหัสในตาราง": k, 
+                "เหตุผล (เช่น อบรมฯ)": v.get("reason", v.get("text", "")),
+                "อ้างอิงคำสั่ง": v.get("ref", ""),
                 "ลง 177": v.get("show_177", True),
                 "ลง 178": v.get("show_178", True),
                 "ลงรายงานฯ": v.get("show_report", False)
             })
         else:
             rm_list.append({
-                "รหัส (เช่น อ)": k, 
-                "ข้อความหมายเหตุ": str(v),
+                "รหัสในตาราง": k, 
+                "เหตุผล (เช่น อบรมฯ)": str(v),
+                "อ้างอิงคำสั่ง": "",
                 "ลง 177": True,
                 "ลง 178": True,
                 "ลงรายงานฯ": False
             })
             
     while len(rm_list) < 3:
-        rm_list.append({"รหัส (เช่น อ)": "", "ข้อความหมายเหตุ": "", "ลง 177": True, "ลง 178": True, "ลงรายงานฯ": False})
+        rm_list.append({"รหัสในตาราง": "", "เหตุผล (เช่น อบรมฯ)": "", "อ้างอิงคำสั่ง": "", "ลง 177": True, "ลง 178": True, "ลงรายงานฯ": False})
         
     df_rm = pd.DataFrame(rm_list)
     
     rm_col_config = {
+        "รหัสในตาราง": st.column_config.TextColumn("รหัสในตาราง", width="small"),
+        "เหตุผล (เช่น อบรมฯ)": st.column_config.TextColumn("เหตุผล (เช่น อบรมฯ)"),
+        "อ้างอิงคำสั่ง": st.column_config.TextColumn("อ้างอิงคำสั่ง"),
         "ลง 177": st.column_config.CheckboxColumn("ลง 177", default=True),
         "ลง 178": st.column_config.CheckboxColumn("ลง 178", default=True),
         "ลงรายงานฯ": st.column_config.CheckboxColumn("ลงรายงานฯ", default=False)
@@ -420,11 +449,14 @@ with st.container(border=True):
     
     remarks_dict = {}
     for _, r in edited_rm.iterrows():
-        code = str(r.get("รหัส (เช่น อ)", "")).strip()
-        txt = str(r.get("ข้อความหมายเหตุ", "")).strip()
-        if code and code != "nan" and txt and txt != "nan":
+        code = str(r.get("รหัสในตาราง", "")).strip()
+        reason = str(r.get("เหตุผล (เช่น อบรมฯ)", "")).strip()
+        ref = str(r.get("อ้างอิงคำสั่ง", "")).strip()
+        
+        if code and code != "nan" and (reason != "nan" or ref != "nan"):
             remarks_dict[code] = {
-                "text": txt,
+                "reason": reason if reason != "nan" else "",
+                "ref": ref if ref != "nan" else "",
                 "show_177": bool(r.get("ลง 177", True)),
                 "show_178": bool(r.get("ลง 178", True)),
                 "show_report": bool(r.get("ลงรายงานฯ", False))
@@ -671,6 +703,23 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
+# 📌 ฟังก์ชันจัดเรียงวันที่ให้สวยงาม เช่น [10, 11, 15] -> "10-11, 15"
+def format_days_to_ranges_text(days_list):
+    if not days_list: return ""
+    days_list = sorted(list(set(days_list)))
+    ranges = []
+    start = days_list[0]
+    prev = days_list[0]
+    for d in days_list[1:]:
+        if d == prev + 1:
+            prev = d
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = d
+            prev = d
+    ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+    return ",".join(ranges)
+
 def extract_employee_stats(roster_row):
     weekly_worked_holidays = [] 
     weekly_rest_holidays = []   
@@ -692,31 +741,13 @@ def extract_employee_stats(roster_row):
             
         if ")" in val: is_in_period = False
 
-    def to_ranges(days_list):
-        if not days_list: return []
-        ranges = []
-        start = days_list[0]
-        prev = days_list[0]
-        for d in days_list[1:]:
-            if d == prev + 1: prev = d
-            else:
-                ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
-                start = d
-                prev = d
-        ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
-        return ranges
-        
-    worked_ranges = to_ranges(weekly_worked_holidays)
-    rest_ranges = to_ranges(weekly_rest_holidays)
-    
-    val_4 = ",".join(rest_ranges) if rest_ranges else "-"    
-    val_5 = ",".join(worked_ranges) if worked_ranges else "-" 
+    val_4 = format_days_to_ranges_text(weekly_rest_holidays) if weekly_rest_holidays else "-"    
+    val_5 = format_days_to_ranges_text(weekly_worked_holidays) if weekly_worked_holidays else "-" 
     
     total_weekly_holidays = len(weekly_worked_holidays) + len(weekly_rest_holidays)
     val_17 = f"{total_weekly_holidays:02d}"
     
-    v_ranges = to_ranges(leave_days_vacation)
-    val_9 = ",".join(v_ranges) if v_ranges else "-"
+    val_9 = format_days_to_ranges_text(leave_days_vacation) if leave_days_vacation else "-"
     val_10 = str(leave_days_vacation[0]) if leave_days_vacation else "-"
     val_11 = str(leave_days_vacation[-1]) if leave_days_vacation else "-"
     val_12 = f"{len(leave_days_vacation):02d}" if leave_days_vacation else "00"
@@ -895,8 +926,8 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     
     sum_hours = 0 
     
-    # 📌 สร้างลิสต์เพื่อเก็บข้อความหมายเหตุ จะได้ไม่พิมพ์ซ้ำซ้อน
-    remarks_to_print_177 = []
+    # 📌 เก็บวันที่ของแต่ละรหัส เพื่อไปสรุปบรรทัดเดียวท้ายตาราง
+    code_days_177 = {}
     
     def set_cell_val_color(r, c, val, color_hex="000000"):
         cell = ws.cell(row=r, column=c)
@@ -923,17 +954,10 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         is_holiday = shift_clean in leave_types
         font_color = "FF0000" if is_holiday else "000000"
         
-        # ดึงข้อความหมายเหตุเก็บใส่ลิสต์ (ถ้ายังไม่เคยมี)
+        # ถ้ารหัสนี้ตั้งค่าให้แสดงใน 177 ให้เก็บวันที่ไว้ก่อน
         remark_data = remarks_dict.get(shift_clean)
-        remark_text = ""
-        if isinstance(remark_data, dict):
-            if remark_data.get("show_177", True):
-                remark_text = remark_data.get("text", "")
-        elif isinstance(remark_data, str):
-            remark_text = remark_data
-            
-        if remark_text and remark_text not in remarks_to_print_177:
-            remarks_to_print_177.append(remark_text)
+        if isinstance(remark_data, dict) and remark_data.get("show_177", True):
+            code_days_177.setdefault(shift_clean, []).append(day)
         
         if sData and sData["hours"] != "-":
             hours_val = int(sData["hours"])
@@ -969,19 +993,39 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             set_cell_val_color(r, 7, f"{grand_total_satang:02d}", "000000")
             break
             
-    # 📌 ค้นหาคำว่า "หมายเหตุ" ในฟอร์ม 177 แล้วเอาลิสต์ข้อความไปพิมพ์ต่อท้ายด้านล่าง!
-    remark_row_start = 21 # กำหนดค่าพื้นฐานกันเหนียว
+    # 📌 ประกอบร่างข้อความหมายเหตุรวม
+    remarks_to_print_177 = []
+    month_abbr = ind_vars.get("val_6", "")
+    for code, days in code_days_177.items():
+        date_str = format_days_to_ranges_text(days)
+        rm_info = remarks_dict[code]
+        reason = rm_info.get("reason", "")
+        ref = rm_info.get("ref", "")
+        
+        # บรรทัดแรก: วันที่ XX-XX ส.ค.69 เหตุผล
+        line1 = f"วันที่ {date_str} {month_abbr} {reason}".strip()
+        remarks_to_print_177.append(line1)
+        # บรรทัดสอง: เลขที่อ้างอิง
+        if ref:
+            remarks_to_print_177.append(ref)
+            
+    # 📌 ค้นหาคำว่า "หมายเหตุ" แล้วเอาลิสต์ไปพิมพ์ต่อท้ายด้านล่าง
+    remark_row_start = 21 
     remark_col = 8
-    for r in range(10, 35):
-        val = ws.cell(row=r, column=8).value
-        if val and isinstance(val, str) and "หมายเหตุ" in val.replace(" ", ""):
-            remark_row_start = r
-            break
+    for c in [8, 9, 10, 11, 12]:
+        found = False
+        for r in range(10, 40):
+            val = ws.cell(row=r, column=c).value
+            if val and isinstance(val, str) and "หมายเหตุ" in val.replace(" ", ""):
+                remark_row_start = r
+                remark_col = c
+                found = True
+                break
+        if found: break
             
     for i, text in enumerate(remarks_to_print_177):
-        # พิมพ์ประโยคลงในบรรทัดถัดจากคำว่า "หมายเหตุ"
         set_cell_val_color(remark_row_start + 1 + i, remark_col, text, "000000")
-            
+
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToHeight = 1; ws.page_setup.fitToWidth = 1
@@ -1061,8 +1105,8 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
 
     manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
-    # 📌 สร้างลิสต์เพื่อเก็บข้อความหมายเหตุใบ 178
-    remarks_to_print_178 = []
+    # 📌 เก็บวันที่ของแต่ละรหัส เพื่อไปสรุปบรรทัดเดียวท้ายตาราง
+    code_days_178 = {}
     
     for day in range(1, 32):
         row = start_row + day
@@ -1080,17 +1124,9 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
-        # ดึงข้อความหมายเหตุเก็บใส่ลิสต์
         remark_data = remarks_dict.get(shift_clean)
-        remark_text = ""
-        if isinstance(remark_data, dict):
-            if remark_data.get("show_178", True):
-                remark_text = remark_data.get("text", "")
-        elif isinstance(remark_data, str):
-            remark_text = remark_data
-            
-        if remark_text and remark_text not in remarks_to_print_178:
-            remarks_to_print_178.append(remark_text)
+        if isinstance(remark_data, dict) and remark_data.get("show_178", True):
+            code_days_178.setdefault(shift_clean, []).append(day)
         
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
@@ -1135,8 +1171,22 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
         ws.cell(row=42, column=8).value = f"=SUM(H39:H41)"
         
-    # 📌 ค้นหาคำว่า "หมายเหตุ" ในฟอร์ม 178 แล้วเอาลิสต์ข้อความไปพิมพ์ต่อท้ายเช่นกัน
-    remark_row_start = 22 # กำหนดค่าพื้นฐาน
+    # 📌 ประกอบร่างข้อความหมายเหตุรวม 178
+    remarks_to_print_178 = []
+    month_abbr = ind_vars.get("val_6", "")
+    for code, days in code_days_178.items():
+        date_str = format_days_to_ranges_text(days)
+        rm_info = remarks_dict[code]
+        reason = rm_info.get("reason", "")
+        ref = rm_info.get("ref", "")
+        
+        line1 = f"วันที่ {date_str} {month_abbr} {reason}".strip()
+        remarks_to_print_178.append(line1)
+        if ref:
+            remarks_to_print_178.append(ref)
+            
+    # 📌 ค้นหาคำว่า "หมายเหตุ" ในฟอร์ม 178 แล้วเอาลิสต์ข้อความไปพิมพ์ต่อท้ายด้านล่าง
+    remark_row_start = 22 
     remark_col = 11
     for c in [8, 9, 10, 11, 12]:
         found = False
@@ -1147,8 +1197,7 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 remark_col = c
                 found = True
                 break
-        if found:
-            break
+        if found: break
             
     for i, text in enumerate(remarks_to_print_178):
         cell = ws.cell(row=remark_row_start + 1 + i, column=remark_col)
@@ -1302,7 +1351,10 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
         remark_text = ""
         if isinstance(remark_data, dict):
             if remark_data.get("show_report", False):
-                remark_text = remark_data.get("text", "")
+                # นำเหตุผลและอ้างอิงมารวมกันในบรรทัดเดียวสำหรับรายงานรายวัน
+                reason = remark_data.get("reason", "")
+                ref = remark_data.get("ref", "")
+                remark_text = f"{reason} {ref}".strip()
                 
         if remark_text:
             apply_style(row, 10, remark_text, "000000")
