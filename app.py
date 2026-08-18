@@ -470,7 +470,7 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
-    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติแบบใหม่
+    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติ
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (จะนำไปพิมพ์รวบยอดไว้ใต้คำว่า 'หมายเหตุ')")
     st.info("💡 ตัวอย่าง: รหัส `อ`, เหตุผล `อบรมฯ`, อ้างอิงคำสั่ง `รฟ.ตร.5110/3745/2569 ลว. 04 ส.ค.69`")
@@ -643,27 +643,33 @@ with st.container(border=True):
 
     with st.form("roster_data_form"):
         st.info("💡 **พิมพ์รหัสเวรได้อย่างลื่นไหลเหมือน Excel !** เมื่อคุณพิมพ์เสร็จทั้งหมดแล้ว ให้กดปุ่ม **'💾 บันทึกตารางเวร'** ด้านล่างสุด เพื่อบันทึกข้อมูลและตรวจสอบครับ")
-        st.success(f"🔒 **คอลัมน์ 'ลำดับ' และ 'ชื่อ-สกุล' ถูกแช่แข็งคู่กันแล้ว!** (ซ่อนวันที่เกินจากเดือน {val_13} ออกให้เพื่อความสบายตา)")
+        st.success(f"🔒 **คอลัมน์ 'ลำดับ' และ 'ชื่อ-สกุล' ถูกแช่แข็งรวมกันเป็นเสาเดียวแล้ว!** (ซ่อนวันที่เกินจากเดือน {val_13} ออกให้เพื่อความสบายตา)")
         
         display_df = st.session_state.roster_df.copy()
-        # 📌 แช่แข็งคอลัมน์ ลำดับ และ ชื่อ-สกุล คู่กันไว้ฝั่งซ้ายสุด
-        display_df = display_df.set_index(["ลำดับ", "ชื่อ-สกุล"])
+        
+        # 📌 แก้ปัญหา MultiIndex Error: นำ "ลำดับ" และ "ชื่อ" มัดรวมกันเป็นคอลัมน์เดียว
+        display_df["ลำดับ_ชื่อ"] = display_df["ลำดับ"].astype(str) + ". " + display_df["ชื่อ-สกุล"]
+        display_df = display_df.set_index("ลำดับ_ชื่อ")
 
         edited_display_df = st.data_editor(
             display_df[display_cols], 
             use_container_width=True, 
             column_config=column_config, 
-            num_rows="dynamic",
+            num_rows="fixed", # ล็อกไว้ไม่ให้เด้ง Error ตอนพิมพ์
             key="roster_table"
         )
         
         submit_roster = st.form_submit_button("💾 บันทึกตารางเวรและตรวจสอบความถูกต้อง", type="primary", use_container_width=True)
         
         if submit_roster:
-            # คืนค่าคอลัมน์ ลำดับ และ ชื่อ-สกุล กลับมา
+            # คืนค่ากลับมาเป็น Dataframe ปกติ
             edited_df = edited_display_df.reset_index()
             
-            # 📌 เติมคอลัมน์วันที่หายไป (เช่น 31) กลับมาเป็นค่าว่าง เพื่อรักษาโครงสร้างข้อมูลก่อนเซฟ
+            # 📌 แยก "ลำดับ" และ "ชื่อ" กลับคืนที่เดิม
+            edited_df["ลำดับ"] = edited_df["ลำดับ_ชื่อ"].apply(lambda x: int(x.split(". ", 1)[0]) if ". " in str(x) and x.split(". ", 1)[0].isdigit() else 0)
+            edited_df["ชื่อ-สกุล"] = edited_df["ลำดับ_ชื่อ"].apply(lambda x: x.split(". ", 1)[1] if ". " in str(x) else x)
+            
+            # เติมคอลัมน์วันที่หายไป (เช่น 31) กลับมาเป็นค่าว่าง เพื่อรักษาโครงสร้างข้อมูลก่อนเซฟ
             for d in range(num_days + 1, 32):
                 edited_df[str(d)] = ""
 
@@ -1399,11 +1405,11 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
         # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
             apply_style(row, 1, "", "000000") # ลบวันที่ออก
-            for c in range(2, 11): 
+            for c in range(2, 8): 
                 cell = ws.cell(row=row, column=c)
-                if type(cell).__name__ != 'MergedCell':
-                    cell.value = None
-                    cell.border = thin_border
+                cell.value = None
+                cell.border = thin_border
+            apply_style(row, 8, "", "000000") # ลบหน้าที่
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
