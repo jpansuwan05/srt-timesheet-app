@@ -76,19 +76,6 @@ st.markdown("""
             border: 1px solid #e9ecef !important;
             box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
         }
-        @media (prefers-color-scheme: dark) {
-            div[data-testid="metric-container"] {
-                background-color: #262730;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            }
-            div[data-testid="stVerticalBlock"] > div[style*="border"] {
-                background-color: #0e1117;
-                border: 1px solid #333 !important;
-            }
-            div[data-testid="stExpander"] {
-                border: 1px solid #333 !important;
-            }
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -355,34 +342,6 @@ year_ce = default_year - 543
 first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 
 # ==========================================
-# 📖 คู่มือการใช้งานระบบ 
-# ==========================================
-with st.expander("📖 คู่มือการใช้งานระบบ (คลิกเพื่ออ่านคำแนะนำ)"):
-    st.markdown("""
-    **1. การตั้งค่าเริ่มต้น:**
-    - อัปโหลดไฟล์ `ข้อมูล_2.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
-    - สามารถเปลี่ยนเดือน, ปี พ.ศ., และกำหนดวันหยุดนักขัตฤกษ์ได้ในส่วน "ตั้งค่าข้อมูลส่วนกลาง"
-    
-    **2. การพิมพ์รหัสในตารางเวร (Master Data):**
-    - **ทำงานปกติ:** `ว`, `ค`, `ว/ค`, `ค/ว`, `00-12`, `12-24`, `00-24`
-    - **วันหยุดประจำสัปดาห์ที่มาทำงาน (เบิก 178):** ให้ใส่วงเล็บเปิด `(` ในวันที่เริ่มหยุด และวงเล็บปิด `)` ในวันสุดท้าย (เช่น `(ว` ... `ว)`)
-    - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
-    - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
-    
-    **3. การพิมพ์หมายเหตุอัตโนมัติ:**
-    - เลื่อนไปตั้งค่าใน "📝 ตั้งค่าหมายเหตุอัตโนมัติ" (เช่น รหัส "อ" = อบรมตามคำสั่ง...) เมื่อคุณพิมพ์ "อ" ในตารางเวร ระบบจะนำข้อความนี้ไปใส่ในคอลัมน์หมายเหตุของใบต่างๆ ให้ทันที (เลือกเอกสารได้)
-    
-    **4. การจัดเรียงคนมาใหม่:**
-    - หากตารางเรียงปนกัน ให้กดปุ่ม **"🗂️ จัดเรียงตารางใหม่"** ระบบจะดันคนมาใหม่ไปไว้ท้ายกลุ่มให้อัตโนมัติ
-    
-    **5. การส่งออกเอกสาร (Export):**
-    - ไปที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
-    - เลือกแท็บ **"ส่งออกแบบกลุ่ม"**
-    - สามารถกด **"ดูสรุปยอดเงิน"** ก่อนเพื่อตรวจสอบความถูกต้องได้
-    - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
-    """)
-
-# ==========================================
 # 4. ตั้งค่าส่วนกลาง & ตารางเวร
 # ==========================================
 with st.container(border=True):
@@ -420,9 +379,10 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
+    # 📌 ส่วนเพิ่มหมายเหตุอัตโนมัติ (อัปเกรดให้เลือกเอกสารได้)
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (เลือกให้แสดงเฉพาะบางเอกสารได้)")
-    st.info("💡 กรอกรหัส แล้วติ๊กเลือกได้เลยว่าอยากให้หมายเหตุนี้ไปโผล่ที่ใบไหนบ้าง")
+    st.info("💡 เมื่อพบรหัสที่ระบุ ระบบจะพิมพ์ข้อความสรุปไว้ **ใต้คำว่า 'หมายเหตุ'** ที่ด้านล่างสุดของใบ 177 และ 178 ให้ครั้งเดียวครับ")
     
     old_rm = default_global.get("remarks_dict", {})
     rm_list = []
@@ -935,6 +895,9 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     
     sum_hours = 0 
     
+    # 📌 สร้างลิสต์เพื่อเก็บข้อความหมายเหตุ จะได้ไม่พิมพ์ซ้ำซ้อน
+    remarks_to_print_177 = []
+    
     def set_cell_val_color(r, c, val, color_hex="000000"):
         cell = ws.cell(row=r, column=c)
         if type(cell).__name__ != 'MergedCell':
@@ -960,6 +923,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         is_holiday = shift_clean in leave_types
         font_color = "FF0000" if is_holiday else "000000"
         
+        # ดึงข้อความหมายเหตุเก็บใส่ลิสต์ (ถ้ายังไม่เคยมี)
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
         if isinstance(remark_data, dict):
@@ -968,8 +932,8 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         elif isinstance(remark_data, str):
             remark_text = remark_data
             
-        if remark_text:
-            set_cell_val_color(row, 8, remark_text, "000000")
+        if remark_text and remark_text not in remarks_to_print_177:
+            remarks_to_print_177.append(remark_text)
         
         if sData and sData["hours"] != "-":
             hours_val = int(sData["hours"])
@@ -1004,6 +968,19 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             set_cell_val_color(r, 6, grand_total_baht if grand_total_baht > 0 else 0, "000000")
             set_cell_val_color(r, 7, f"{grand_total_satang:02d}", "000000")
             break
+            
+    # 📌 ค้นหาคำว่า "หมายเหตุ" ในฟอร์ม 177 แล้วเอาลิสต์ข้อความไปพิมพ์ต่อท้ายด้านล่าง!
+    remark_row_start = 21 # กำหนดค่าพื้นฐานกันเหนียว
+    remark_col = 8
+    for r in range(10, 35):
+        val = ws.cell(row=r, column=8).value
+        if val and isinstance(val, str) and "หมายเหตุ" in val.replace(" ", ""):
+            remark_row_start = r
+            break
+            
+    for i, text in enumerate(remarks_to_print_177):
+        # พิมพ์ประโยคลงในบรรทัดถัดจากคำว่า "หมายเหตุ"
+        set_cell_val_color(remark_row_start + 1 + i, remark_col, text, "000000")
             
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -1084,6 +1061,9 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
 
     manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
+    # 📌 สร้างลิสต์เพื่อเก็บข้อความหมายเหตุใบ 178
+    remarks_to_print_178 = []
+    
     for day in range(1, 32):
         row = start_row + day
         ws.cell(row=row, column=1).value = str(day) 
@@ -1100,6 +1080,7 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if "(" in shift_raw: is_in_weekly_period = True
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         
+        # ดึงข้อความหมายเหตุเก็บใส่ลิสต์
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
         if isinstance(remark_data, dict):
@@ -1108,9 +1089,8 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         elif isinstance(remark_data, str):
             remark_text = remark_data
             
-        if remark_text:
-            if type(ws.cell(row=row, column=11)).__name__ != 'MergedCell':
-                ws.cell(row=row, column=11).value = remark_text
+        if remark_text and remark_text not in remarks_to_print_178:
+            remarks_to_print_178.append(remark_text)
         
         if shift_clean and shift_clean not in leave_types and shift_clean != "-":
             is_public = str(day) in ph_dict_local
@@ -1154,6 +1134,32 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
         ws.cell(row=42, column=8).value = f"=SUM(H39:H41)"
+        
+    # 📌 ค้นหาคำว่า "หมายเหตุ" ในฟอร์ม 178 แล้วเอาลิสต์ข้อความไปพิมพ์ต่อท้ายเช่นกัน
+    remark_row_start = 22 # กำหนดค่าพื้นฐาน
+    remark_col = 11
+    for c in [8, 9, 10, 11, 12]:
+        found = False
+        for r in range(10, 40):
+            val = ws.cell(row=r, column=c).value
+            if val and isinstance(val, str) and "หมายเหตุ" in val.replace(" ", ""):
+                remark_row_start = r
+                remark_col = c
+                found = True
+                break
+        if found:
+            break
+            
+    for i, text in enumerate(remarks_to_print_178):
+        cell = ws.cell(row=remark_row_start + 1 + i, column=remark_col)
+        if type(cell).__name__ != 'MergedCell':
+            cell.value = text
+            if cell.font:
+                nf = copy(cell.font)
+                nf.color = "000000"
+                cell.font = nf
+            else:
+                cell.font = Font(color="000000")
     
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -1290,6 +1296,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 
         apply_style(row, 8, emp_info["ตำแหน่ง"] if start_time not in ["-", ""] and not is_holiday else "", "000000")
         
+        # 📌 สำหรับรายงานปฏิบัติงาน (รายวัน) จะให้ลงข้อความตรงตามบรรทัดวันที่นั้นๆ เลย
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
