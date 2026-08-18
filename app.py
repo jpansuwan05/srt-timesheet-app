@@ -38,7 +38,7 @@ shift_data = {
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
 }
 
-# 📌 ฟังก์ชันแปลงตัวเลขเป็นตัวอักษรภาษาไทย (ทดแทนสูตร BAHTTEXT ของ Excel)
+# 📌 ฟังก์ชันแปลงตัวเลขเป็นตัวอักษรภาษาไทย
 def get_thai_baht_text(number):
     txt_num = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"]
     txt_unit = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"]
@@ -445,6 +445,7 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
+    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติ
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (จะนำไปพิมพ์รวบยอดไว้ใต้คำว่า 'หมายเหตุ')")
     st.info("💡 ตัวอย่าง: รหัส `อ`, เหตุผล `อบรมฯ`, อ้างอิงคำสั่ง `รฟ.ตร.5110/3745/2569 ลว. 04 ส.ค.69`")
@@ -616,54 +617,64 @@ with st.container(border=True):
         else:
             column_config[str(d)] = st.column_config.TextColumn(f"{d} (ไม่มี)", width="small", disabled=True)
 
-    edited_df = st.data_editor(
-        st.session_state.roster_df, 
-        hide_index=True, 
-        use_container_width=True, 
-        column_config=column_config, 
-        num_rows="dynamic",
-        key="roster_table"
-    )
+    # 📌 ครอบตารางด้วยฟอร์ม ป้องกันการรีเฟรชรบกวนการพิมพ์
+    with st.form("roster_data_form"):
+        st.info("💡 **พิมพ์รหัสเวรได้อย่างลื่นไหลเหมือน Excel !** เมื่อคุณพิมพ์เสร็จทั้งหมดแล้ว ให้กดปุ่ม **'💾 บันทึกตารางเวร'** ด้านล่างสุด เพื่อบันทึกข้อมูลและตรวจสอบครับ")
+        
+        edited_df = st.data_editor(
+            st.session_state.roster_df, 
+            hide_index=True, 
+            use_container_width=True, 
+            column_config=column_config, 
+            num_rows="dynamic",
+            key="roster_table"
+        )
+        
+        submit_roster = st.form_submit_button("💾 บันทึกตารางเวรและตรวจสอบความถูกต้อง", type="primary", use_container_width=True)
+        
+        if submit_roster:
+            for d in range(1, 32):
+                d_str = str(d)
+                if d_str in edited_df.columns:
+                    edited_df[d_str] = edited_df[d_str].fillna("").astype(str).replace(["None", "nan", "<NA>"], "")
 
-    for d in range(1, 32):
-        d_str = str(d)
-        if d_str in edited_df.columns:
-            edited_df[d_str] = edited_df[d_str].fillna("").astype(str).replace(["None", "nan", "<NA>"], "")
-
-    if not edited_df.equals(st.session_state.roster_df):
-        for i in range(len(edited_df)):
-            if i < len(st.session_state.roster_df):
-                old_name = str(st.session_state.roster_df.iloc[i]['ชื่อ-สกุล']).strip()
-                old_role = str(st.session_state.roster_df.iloc[i]['Role (หน้าที่)']).strip()
-                
-                new_name = str(edited_df.iloc[i]['ชื่อ-สกุล']).strip()
-                new_role = str(edited_df.iloc[i]['Role (หน้าที่)']).strip()
-                
-                if (old_name != new_name or old_role != new_role) and old_name:
-                    old_key = f"{old_name}_{old_role}"
-                    new_key = f"{new_name}_{new_role}"
-                    
-                    if old_key in st.session_state.employees:
-                        st.session_state.employees[new_key] = st.session_state.employees[old_key].copy()
-                        st.session_state.employees[new_key]['ชื่อ-สกุล'] = new_name
-                        st.session_state.employees[new_key]['Role'] = new_role
-                        st.session_state.employees[new_key]['ตำแหน่ง'] = str(edited_df.iloc[i]['ตำแหน่งเบิก']).strip()
+            if not edited_df.equals(st.session_state.roster_df):
+                for i in range(len(edited_df)):
+                    if i < len(st.session_state.roster_df):
+                        old_name = str(st.session_state.roster_df.iloc[i]['ชื่อ-สกุล']).strip()
+                        old_role = str(st.session_state.roster_df.iloc[i]['Role (หน้าที่)']).strip()
                         
-                        del st.session_state.employees[old_key]
+                        new_name = str(edited_df.iloc[i]['ชื่อ-สกุล']).strip()
+                        new_role = str(edited_df.iloc[i]['Role (หน้าที่)']).strip()
+                        
+                        if (old_name != new_name or old_role != new_role) and old_name:
+                            old_key = f"{old_name}_{old_role}"
+                            new_key = f"{new_name}_{new_role}"
+                            
+                            if old_key in st.session_state.employees:
+                                st.session_state.employees[new_key] = st.session_state.employees[old_key].copy()
+                                st.session_state.employees[new_key]['ชื่อ-สกุล'] = new_name
+                                st.session_state.employees[new_key]['Role'] = new_role
+                                st.session_state.employees[new_key]['ตำแหน่ง'] = str(edited_df.iloc[i]['ตำแหน่งเบิก']).strip()
+                                
+                                del st.session_state.employees[old_key]
 
-        st.session_state.roster_df = edited_df
-        save_roster_to_local(edited_df)
-        local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_update_{uuid.uuid4().hex}")
+                st.session_state.roster_df = edited_df
+                save_roster_to_local(edited_df)
+                local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_update_{uuid.uuid4().hex}")
 
-    for _, row in edited_df.iterrows():
-        name = str(row.get('ชื่อ-สกุล', '')).strip()
-        role = str(row.get('Role (หน้าที่)', '')).strip()
-        if not name: continue
-        key = f"{name}_{role}"
-        if key in st.session_state.employees:
-            st.session_state.employees[key]['Role'] = role
-            st.session_state.employees[key]['ชื่อ-สกุล'] = name
-            st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
+            for _, row in edited_df.iterrows():
+                name = str(row.get('ชื่อ-สกุล', '')).strip()
+                role = str(row.get('Role (หน้าที่)', '')).strip()
+                if not name: continue
+                key = f"{name}_{role}"
+                if key in st.session_state.employees:
+                    st.session_state.employees[key]['Role'] = role
+                    st.session_state.employees[key]['ชื่อ-สกุล'] = name
+                    st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
+            
+            # สั่งรีเฟรชทีเดียวเมื่อกดปุ่มบันทึกเสร็จ
+            st.rerun()
 
 # ==========================================
 # 🤖 🛡️ ระบบตรวจสอบความถูกต้องของตารางเวร (AI Validator)
@@ -682,7 +693,7 @@ def get_shift_clean_for_val(row_data, day_num):
 for d in range(1, num_days + 1):
     day_info = {r: {'reg':[], 'sub':[]} for r in roles_list}
     
-    for _, r_data in edited_df.iterrows():
+    for _, r_data in st.session_state.roster_df.iterrows():
         r_name = str(r_data.get('ชื่อ-สกุล', '')).strip()
         r_role = str(r_data.get('Role (หน้าที่)', '')).strip()
         shift_c = get_shift_clean_for_val(r_data, d)
@@ -734,7 +745,7 @@ for d in range(1, num_days + 1):
                         validator_errors.append(f"วันที่ {d}: {s['name']} ลงเวร '{s['shift']}' ซ้ำกับตัวจริง {r['name']} ในตำแหน่ง {role}")
                         
 if validator_errors:
-    st.error(f"พบข้อผิดพลาดในตารางเวรทั้งหมด {len(validator_errors)} จุด (โปรดตรวจสอบและแก้ไข)")
+    st.error(f"พบข้อผิดพลาดในตารางเวรทั้งหมด {len(validator_errors)} จุด (โปรดตรวจสอบและแก้ไขก่อนกดบันทึก)")
     for err in validator_errors:
         st.warning(err, icon="⚠️")
 else:
@@ -744,7 +755,6 @@ else:
 # 5. ฟังก์ชันสร้างไฟล์ Excel
 # ==========================================
 
-# 📌 ฟังก์ชันจัดเรียงวันที่ให้สวยงาม เช่น [10, 11, 15] -> "10-11, 15"
 def format_days_to_ranges_text(days_list):
     if not days_list: return ""
     days_list = sorted(list(set(days_list)))
@@ -1020,7 +1030,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     grand_total_baht = int(grand_total_money)
     grand_total_satang = int(round((grand_total_money - grand_total_baht) * 100))
     
-    # 📌 นำตัวเลขไปแปลงเป็นข้อความภาษาไทยเพื่อเขียนทับในใบ 177
     baht_text_str = get_thai_baht_text(grand_total_money)
 
     for r in range(37, 45):
@@ -1033,7 +1042,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             set_cell_val_color(r, 6, grand_total_baht if grand_total_baht > 0 else 0, "000000")
             set_cell_val_color(r, 7, f"{grand_total_satang:02d}", "000000")
             
-            # พิมพ์ตัวอักษรภาษาไทยลงไปในบรรทัดถัดไป 
             cell_txt = ws.cell(row=r+1, column=2)
             if type(cell_txt).__name__ != 'MergedCell':
                 cell_txt.value = baht_text_str
