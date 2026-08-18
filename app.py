@@ -38,6 +38,44 @@ shift_data = {
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
 }
 
+# 📌 ฟังก์ชันแปลงตัวเลขเป็นตัวอักษรภาษาไทย (ทดแทนสูตร BAHTTEXT ของ Excel)
+def get_thai_baht_text(number):
+    txt_num = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"]
+    txt_unit = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"]
+    
+    def read_num(num_str):
+        res = ""
+        length = len(num_str)
+        for i, d in enumerate(num_str):
+            v = int(d)
+            if v == 0: continue
+            p = length - i - 1
+            if p == 0 and v == 1 and length > 1 and num_str[-2] != '0':
+                res += "เอ็ด"
+            elif p == 1 and v == 2:
+                res += "ยี่สิบ"
+            elif p == 1 and v == 1:
+                res += "สิบ"
+            else:
+                res += txt_num[v] + txt_unit[p]
+        return res
+        
+    parts = f"{round(number, 2):.2f}".split(".")
+    baht, satang = parts[0], parts[1]
+    
+    text = "(เงิน"
+    if int(baht) > 0:
+        text += read_num(baht) + "บาท"
+    elif int(baht) == 0 and int(satang) == 0:
+        text += "ศูนย์บาท"
+        
+    if int(satang) > 0:
+        text += read_num(satang) + "สตางค์"
+    else:
+        text += "ถ้วน"
+    text += ")"
+    return text
+
 # ==========================================
 # ✨ เวทมนตร์ CSS แต่งหน้าตา Web App ให้ดู Modern
 # ==========================================
@@ -359,9 +397,13 @@ with st.expander("📖 คู่มือการใช้งานระบบ
     **3. การพิมพ์หมายเหตุอัตโนมัติ:**
     - เลื่อนไปตั้งค่าใน "📝 ตั้งค่าหมายเหตุอัตโนมัติ" (เช่น รหัส "อ") ระบบจะรวบรวมวันที่ทั้งหมด แล้วพิมพ์ลงใต้คำว่า 'หมายเหตุ' ให้แบบสวยงาม ไม่ซ้ำซ้อน
     
-    **4. การส่งออกเอกสาร (Export):**
+    **4. การจัดเรียงคนมาใหม่:**
+    - หากตารางเรียงปนกัน ให้กดปุ่ม **"🗂️ จัดเรียงตารางใหม่"** ระบบจะดันคนมาใหม่ไปไว้ท้ายกลุ่มให้อัตโนมัติ
+    
+    **5. การส่งออกเอกสาร (Export):**
     - ไปที่ **"3. ส่งออกเอกสาร Excel สำเร็จรูป"**
     - เลือกแท็บ **"ส่งออกแบบกลุ่ม"**
+    - สามารถกด **"ดูสรุปยอดเงิน"** ก่อนเพื่อตรวจสอบความถูกต้องได้
     - ระบบจะประมวลผลใบเบิก 177, 178 และรายงานปฏิบัติงานของทุกคนที่เลือก มัดรวมเป็นไฟล์ `.zip` แยกโฟลเดอร์ให้พร้อมส่งทันที!
     """)
 
@@ -403,7 +445,6 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
-    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติแบบใหม่ (แยกคำอธิบาย และ เลขที่คำสั่ง)
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (จะนำไปพิมพ์รวบยอดไว้ใต้คำว่า 'หมายเหตุ')")
     st.info("💡 ตัวอย่าง: รหัส `อ`, เหตุผล `อบรมฯ`, อ้างอิงคำสั่ง `รฟ.ตร.5110/3745/2569 ลว. 04 ส.ค.69`")
@@ -925,8 +966,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     rate_satang = int(round((rate_val - rate_baht) * 100))
     
     sum_hours = 0 
-    
-    # 📌 เก็บวันที่ของแต่ละรหัส เพื่อไปสรุปบรรทัดเดียวท้ายตาราง
     code_days_177 = {}
     
     def set_cell_val_color(r, c, val, color_hex="000000"):
@@ -954,7 +993,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         is_holiday = shift_clean in leave_types
         font_color = "FF0000" if is_holiday else "000000"
         
-        # ถ้ารหัสนี้ตั้งค่าให้แสดงใน 177 ให้เก็บวันที่ไว้ก่อน
         remark_data = remarks_dict.get(shift_clean)
         if isinstance(remark_data, dict) and remark_data.get("show_177", True):
             code_days_177.setdefault(shift_clean, []).append(day)
@@ -981,6 +1019,9 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     grand_total_money = sum_hours * rate_val
     grand_total_baht = int(grand_total_money)
     grand_total_satang = int(round((grand_total_money - grand_total_baht) * 100))
+    
+    # 📌 นำตัวเลขไปแปลงเป็นข้อความภาษาไทยเพื่อเขียนทับในใบ 177
+    baht_text_str = get_thai_baht_text(grand_total_money)
 
     for r in range(37, 45):
         cell_v1 = str(ws.cell(row=r, column=1).value).strip()
@@ -991,9 +1032,22 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             set_cell_val_color(r, 5, f"{rate_satang:02d}", "000000")
             set_cell_val_color(r, 6, grand_total_baht if grand_total_baht > 0 else 0, "000000")
             set_cell_val_color(r, 7, f"{grand_total_satang:02d}", "000000")
+            
+            # พิมพ์ตัวอักษรภาษาไทยลงไปในบรรทัดถัดไป 
+            cell_txt = ws.cell(row=r+1, column=2)
+            if type(cell_txt).__name__ != 'MergedCell':
+                cell_txt.value = baht_text_str
+            else:
+                cell_txt.value = baht_text_str
+            
+            if cell_txt.font:
+                nf = copy(cell_txt.font)
+                nf.color = "000000"
+                cell_txt.font = nf
+            else:
+                cell_txt.font = Font(color="000000")
             break
             
-    # 📌 ประกอบร่างข้อความหมายเหตุรวม
     remarks_to_print_177 = []
     month_abbr = ind_vars.get("val_6", "")
     for code, days in code_days_177.items():
@@ -1002,14 +1056,11 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         reason = rm_info.get("reason", "")
         ref = rm_info.get("ref", "")
         
-        # บรรทัดแรก: วันที่ XX-XX ส.ค.69 เหตุผล
         line1 = f"วันที่ {date_str} {month_abbr} {reason}".strip()
         remarks_to_print_177.append(line1)
-        # บรรทัดสอง: เลขที่อ้างอิง
         if ref:
             remarks_to_print_177.append(ref)
             
-    # 📌 ค้นหาคำว่า "หมายเหตุ" แล้วเอาลิสต์ไปพิมพ์ต่อท้ายด้านล่าง
     remark_row_start = 21 
     remark_col = 8
     for c in [8, 9, 10, 11, 12]:
@@ -1105,7 +1156,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
 
     manual_weekly_holidays = parse_holiday_string_to_set(ind_vars.get('val_5', '0'))
     
-    # 📌 เก็บวันที่ของแต่ละรหัส เพื่อไปสรุปบรรทัดเดียวท้ายตาราง
     code_days_178 = {}
     
     for day in range(1, 32):
@@ -1171,7 +1221,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
         ws.cell(row=42, column=8).value = f"=SUM(H39:H41)"
         
-    # 📌 ประกอบร่างข้อความหมายเหตุรวม 178
     remarks_to_print_178 = []
     month_abbr = ind_vars.get("val_6", "")
     for code, days in code_days_178.items():
@@ -1185,7 +1234,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if ref:
             remarks_to_print_178.append(ref)
             
-    # 📌 ค้นหาคำว่า "หมายเหตุ" ในฟอร์ม 178 แล้วเอาลิสต์ข้อความไปพิมพ์ต่อท้ายด้านล่าง
     remark_row_start = 22 
     remark_col = 11
     for c in [8, 9, 10, 11, 12]:
@@ -1345,13 +1393,11 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 
         apply_style(row, 8, emp_info["ตำแหน่ง"] if start_time not in ["-", ""] and not is_holiday else "", "000000")
         
-        # 📌 สำหรับรายงานปฏิบัติงาน (รายวัน) จะให้ลงข้อความตรงตามบรรทัดวันที่นั้นๆ เลย
         shift_clean = shift_raw.replace("(", "").replace(")", "")
         remark_data = remarks_dict.get(shift_clean)
         remark_text = ""
         if isinstance(remark_data, dict):
             if remark_data.get("show_report", False):
-                # นำเหตุผลและอ้างอิงมารวมกันในบรรทัดเดียวสำหรับรายงานรายวัน
                 reason = remark_data.get("reason", "")
                 ref = remark_data.get("ref", "")
                 remark_text = f"{reason} {ref}".strip()
