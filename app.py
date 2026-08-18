@@ -83,12 +83,10 @@ st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
 
-        /* ใส่ฟอนต์เฉพาะส่วนที่เป็นข้อความ ป้องกันการทับไอคอนของระบบ */
         p, h1, h2, h3, h4, h5, h6, li, label, div.stMarkdown, input, textarea, select {
             font-family: 'Prompt', sans-serif !important;
         }
 
-        /* ตกแต่ง Card / Container ให้โค้งมนและมีมิติอ่อนๆ */
         div[data-testid="stVerticalBlock"] > div[style*="border"] {
             border-radius: 20px !important;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
@@ -97,7 +95,6 @@ st.markdown("""
             transition: all 0.3s ease;
         }
 
-        /* ปุ่มกด (Buttons) */
         div.stButton > button {
             font-family: 'Prompt', sans-serif !important;
             border-radius: 12px !important;
@@ -109,7 +106,6 @@ st.markdown("""
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15) !important;
         }
 
-        /* Metric Dashboard (ยอดสรุป) */
         div[data-testid="metric-container"] {
             border-radius: 15px !important;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
@@ -122,7 +118,6 @@ st.markdown("""
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12) !important;
         }
 
-        /* แท็บเมนู (Tabs) */
         .stTabs [data-baseweb="tab-list"] {
             gap: 10px;
             padding: 5px;
@@ -134,12 +129,10 @@ st.markdown("""
             font-weight: 500;
         }
 
-        /* ช่องกรอกข้อมูล (Inputs & Select) */
         .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
             border-radius: 10px !important;
         }
 
-        /* เมนูแบบพับ (Expanders) */
         div[data-testid="stExpander"] {
             border-radius: 15px !important;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
@@ -477,7 +470,7 @@ with st.container(border=True):
                 ph_name = st.text_input(f"ชื่อวันหยุด (วันที่ {d})", value=old_name, key=f"ph_{d}")
                 ph_dict[str(d)] = ph_name
 
-    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติแบบใหม่
+    # 📌 ส่วนตั้งค่าหมายเหตุอัตโนมัติ
     st.markdown("---")
     st.markdown("##### 📝 ตั้งค่าหมายเหตุอัตโนมัติ (จะนำไปพิมพ์รวบยอดไว้ใต้คำว่า 'หมายเหตุ')")
     st.info("💡 ตัวอย่าง: รหัส `อ`, เหตุผล `อบรมฯ`, อ้างอิงคำสั่ง `รฟ.ตร.5110/3745/2569 ลว. 04 ส.ค.69`")
@@ -644,7 +637,6 @@ with st.container(border=True):
         "Role (หน้าที่)": st.column_config.SelectboxColumn("Role", options=roles_list, width="small")
     }
     
-    # 📌 จัดเตรียมคอลัมน์ที่จะแสดง (ซ่อนวันที่เกิน)
     display_cols = ["ขึ้นหน้าใหม่", "ลำดับ", "ตำแหน่งเบิก", "Role (หน้าที่)"]
     for d in range(1, num_days + 1):
         column_config[str(d)] = st.column_config.TextColumn(str(d), width="small")
@@ -657,7 +649,6 @@ with st.container(border=True):
         display_df = st.session_state.roster_df.copy()
         display_df = display_df.set_index("ชื่อ-สกุล")
 
-        # 📌 โยนข้อมูลไปวาดตารางเฉพาะคอลัมน์ที่มีในเดือนนั้น
         edited_display_df = st.data_editor(
             display_df[display_cols], 
             hide_index=False, 
@@ -672,7 +663,6 @@ with st.container(border=True):
         if submit_roster:
             edited_df = edited_display_df.reset_index()
             
-            # 📌 เติมคอลัมน์วันที่หายไป (เช่น 31) ให้กลับมาครบ 31 วัน เพื่อรักษาโครงสร้างข้อมูลก่อนเซฟ
             for d in range(num_days + 1, 32):
                 d_str = str(d)
                 col_data = [""] * len(edited_df)
@@ -681,7 +671,6 @@ with st.container(border=True):
                     col_data[idx] = st.session_state.roster_df.iloc[idx].get(d_str, "")
                 edited_df[d_str] = col_data
 
-            # 📌 จัดเรียงคอลัมน์ให้กลับมาลำดับเดิมเป๊ะๆ 
             expected_cols = list(st.session_state.roster_df.columns)
             for c in expected_cols:
                 if c not in edited_df.columns:
@@ -1046,11 +1035,11 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     for day in range(1, 32):
         row = start_row + day - 1
         
-        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
+        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด แต่ห้ามลบหมายเหตุ (คอลัมน์ 8 ขึ้นไป)
         if day > num_days:
             set_cell_val_color(row, 1, "", "000000") # ลบวันที่
             set_cell_val_color(row, 2, "", "000000") # ลบเวลา
-            for col in range(3, 10): set_cell_val_color(row, col, "", "000000") # ลบข้อมูลและหมายเหตุ
+            for col in range(3, 8): set_cell_val_color(row, col, "", "000000") # ลบชั่วโมงและเงิน
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
@@ -1227,11 +1216,11 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         row = start_row + day
         ws.cell(row=row, column=1).value = str(day) 
         
-        for col in range(2, 12):
+        # 📌 เคลียร์เฉพาะช่องข้อมูล (คอลัมน์ 2 ถึง 10) ห้ามยุ่งกับ 11-12
+        for col in range(2, 11):
             if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                 ws.cell(row=row, column=col).value = None
 
-        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
             ws.cell(row=row, column=1).value = "" # ลบวันที่ออก
             continue
@@ -1418,8 +1407,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                 cell = ws.cell(row=row, column=c)
                 cell.value = None
                 cell.border = thin_border
-            apply_style(row, 8, "", "000000")
-            apply_style(row, 10, "", "000000")
+            apply_style(row, 8, "", "000000") # ลบหน้าที่
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
