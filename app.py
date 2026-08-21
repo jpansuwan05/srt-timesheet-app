@@ -19,7 +19,7 @@ st.set_page_config(page_title="SRT Timesheet App", page_icon="🚂", layout="wid
 # ==========================================
 # 📌 0. ข้อมูลตั้งต้นที่สำคัญมาก (Global Variables)
 # ==========================================
-leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา"]
+leave_types = ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "น", "น.", "ล", "ล.", "ลา", "อ", "อ."]
 roles_list = ["นสน.", "ช.นสน.1", "ช.นสน.2", "เสมียน", "ประแจ", "กั้นถนนฯฉิมพลี", "กั้นถนนฯบางระมาด", "ลูกจ้าง", "อื่นๆ"]
 shift_data = {
     "ว": {"text": "(06.00-18.00) น.", "hours": 4}, "ค": {"text": "(00.00-06.00)(18.00-24.00) น.", "hours": 4},
@@ -36,9 +36,9 @@ shift_data = {
     "ก": {"text": "ก.", "hours": "-"}, "ก.": {"text": "ก.", "hours": "-"},
     "น": {"text": "น.", "hours": "-"}, "น.": {"text": "น.", "hours": "-"},
     "ล": {"text": "ล.", "hours": "-"}, "ล.": {"text": "ล.", "hours": "-"}, "ลา": {"text": "ลา", "hours": "-"},
+    "อ": {"text": "อ.", "hours": "-"}, "อ.": {"text": "อ.", "hours": "-"} 
 }
 
-# 📌 ฟังก์ชันแปลงตัวเลขเป็นตัวอักษรภาษาไทย
 def get_thai_baht_text(number):
     txt_num = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"]
     txt_unit = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"]
@@ -224,8 +224,134 @@ def sort_roster_by_role(df, emp_dict):
     temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
     return temp_df.drop(columns=['sort_key'])
 
+def parse_employee_dataframe(df_input, is_regular_worker=True):
+    result_dict = {}
+    for _, row in df_input.iterrows():
+        name = str(row.get("รายชื่อ", "")).strip()
+        if not name or name == "nan": continue
+        pos = str(row.get("ตำแหน่ง", "-")).strip()
+        p_clean = pos.replace(" ", "")
+        
+        role = pos
+        if "นายสถานี" in p_clean or ("นสน" in p_clean and "ช.นสน" not in p_clean): role = "นสน."
+        elif "ช.นสน.ตช" in p_clean or "ช.นสน.1" in p_clean: role = "ช.นสน.1"
+        elif "ช.นสน.ตค" in p_clean or "ช.นสน.2" in p_clean: role = "ช.นสน.2"
+        elif "เสมียน" in p_clean: role = "เสมียน"
+        elif "ประแจ" in p_clean: role = "ประแจ"
+        elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
+        elif "บางระมาด" in p_clean: role = "กั้นถนนฯบางระมาด"
+        elif "บริการ" in p_clean or "ลูกจ้าง" in p_clean: role = "ลูกจ้าง"
+        elif "กั้นถนน" in p_clean: role = "อื่นๆ"
+        else: role = "อื่นๆ"
+        
+        emp_id_raw = str(row.get("เลขประจำตัว", "-")) if pd.notna(row.get("เลขประจำตัว")) else "-"
+        if emp_id_raw.endswith(".0"): emp_id_raw = emp_id_raw[:-2]
+        
+        acc1_raw = str(row.get("รหัสบัญชี", "-")) if pd.notna(row.get("รหัสบัญชี")) else "-"
+        if acc1_raw.endswith(".0"): acc1_raw = acc1_raw[:-2]
+        
+        acc2_raw = str(row.get("รหัสบัญชี2", "-")) if pd.notna(row.get("รหัสบัญชี2")) else "-"
+        if acc2_raw.endswith(".0"): acc2_raw = acc2_raw[:-2]
+        
+        group_raw = str(row.get("กลุ่ม", "")).strip()
+        if group_raw == "nan" or not group_raw: group_raw = role
+        
+        unique_key = f"{name}_{role}"
+        result_dict[unique_key] = {
+            "ชื่อ-สกุล": name, "ตำแหน่ง": pos, 
+            "เลขประจำตัว": emp_id_raw,
+            "เงินเดือน": str(row.get("เงินเดือน", "-")) if pd.notna(row.get("เงินเดือน")) else "-", 
+            "เรท": float(row.get("เรท 1 ชั่วโมง", 0)) if pd.notna(row.get("เรท 1 ชั่วโมง")) else 0.0,
+            "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
+            "รหัสบัญชี": acc1_raw,
+            "รหัสบัญชี2": acc2_raw,
+            "กลุ่ม": group_raw,
+            "Role": role, "is_regular": is_regular_worker 
+        }
+    return result_dict
+
 # ==========================================
-# 1. เมนูแถบด้านข้าง (Sidebar)
+# 2. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย
+# ==========================================
+saved_emp_json = local_storage.getItem("srt_employees_data")
+saved_sub_json = local_storage.getItem("srt_sub_db_data")
+
+if saved_emp_json and 'employees' not in st.session_state:
+    try: st.session_state.employees = json.loads(saved_emp_json)
+    except: st.session_state.employees = None
+
+if saved_sub_json and 'sub_db' not in st.session_state:
+    try: st.session_state.sub_db = json.loads(saved_sub_json)
+    except: st.session_state.sub_db = None
+
+if 'employees' not in st.session_state or not st.session_state.employees:
+    if saved_emp_json:
+        st.info("💡 **ตรวจพบข้อมูลตารางเวรที่คุณทำค้างไว้ในเครื่อง!**")
+        if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary"):
+            st.session_state.employees = json.loads(saved_emp_json)
+            st.rerun()
+            
+    with st.container(border=True):
+        st.warning("🔒 **ยังไม่มีข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์ 'ข้อมูล_2.xlsx' เพื่อเริ่มต้น**")
+        st.info("💡 **เคล็ดลับ:** หากต้องการให้ระบบจำ 'ฐานข้อมูลผู้แทน' ให้สร้าง Sheet ที่ 2 ในไฟล์ Excel และใส่รายชื่อผู้แทนเตรียมไว้ได้เลยครับ")
+        uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์", type=["xlsx"])
+        
+        if uploaded_emp_file is not None:
+            try:
+                xls = pd.ExcelFile(uploaded_emp_file)
+                
+                # 📌 1. อ่าน Sheet แรก (พนักงานประจำ)
+                df_reg = pd.read_excel(xls, sheet_name=0)
+                emp_dict = parse_employee_dataframe(df_reg, is_regular_worker=True)
+                
+                # 📌 2. อ่าน Sheet ที่ 2 (ฐานข้อมูลผู้แทน) ถ้ามี
+                sub_dict = {}
+                if len(xls.sheet_names) > 1:
+                    df_sub = pd.read_excel(xls, sheet_name=1)
+                    sub_dict = parse_employee_dataframe(df_sub, is_regular_worker=False)
+
+                st.session_state.employees = emp_dict
+                st.session_state.sub_db = sub_dict
+                
+                local_storage.setItem("srt_employees_data", json.dumps(emp_dict), key=f"ls_emp_{uuid.uuid4().hex}")
+                if sub_dict:
+                    local_storage.setItem("srt_sub_db_data", json.dumps(sub_dict), key=f"ls_sub_{uuid.uuid4().hex}")
+                    
+                st.success("✅ โหลดข้อมูลพนักงาน และ ฐานข้อมูลผู้แทนสำเร็จ! กำลังเข้าสู่ระบบ...")
+                st.rerun()
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
+    st.stop()
+
+if 'roster_df' not in st.session_state:
+    saved_df = load_roster_from_local()
+    if saved_df is not None:
+        st.session_state.roster_df = saved_df
+        for _, row in saved_df.iterrows():
+            name = str(row['ชื่อ-สกุล']).strip()
+            role = str(row['Role (หน้าที่)']).strip()
+            unique_key = f"{name}_{role}"
+            if unique_key not in st.session_state.employees:
+                 st.session_state.employees[unique_key] = {
+                        "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
+                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
+                 }
+    else:
+        data = []
+        for i, (key, info) in enumerate(st.session_state.employees.items()):
+            row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
+            for d in range(1, 32): row[str(d)] = ""
+            data.append(row)
+        df = pd.DataFrame(data)
+        for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
+        st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
+        save_roster_to_local(st.session_state.roster_df)
+
+if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
+    st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
+
+# ==========================================
+# 1. เมนูแถบด้านข้าง (Sidebar) - ย้ายลงมาตรงนี้เพื่อให้ปุ่มเซฟทำงานได้ถูกต้อง!
 # ==========================================
 with st.sidebar:
     st.markdown("## 🚂 เมนูหลัก")
@@ -240,6 +366,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 💾 สำรองข้อมูลตารางเวร")
+    # 📌 ตอนนี้ปุ่มสำรองข้อมูลจะโชว์เสมอแน่นอน เพราะเราโหลดข้อมูล roster_df เสร็จเรียบร้อยแล้ว!
     if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
@@ -284,107 +411,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error: {e}")
 
-# ==========================================
-# 2. 🛡️ ระบบโหลดข้อมูลพนักงานแบบปลอดภัย
-# ==========================================
-saved_emp_json = local_storage.getItem("srt_employees_data")
-
-if saved_emp_json and 'employees' not in st.session_state:
-    try: st.session_state.employees = json.loads(saved_emp_json)
-    except: st.session_state.employees = None
-
-if 'employees' not in st.session_state or not st.session_state.employees:
-    if saved_emp_json:
-        st.info("💡 **ตรวจพบข้อมูลตารางเวรที่คุณทำค้างไว้ในเครื่อง!**")
-        if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary"):
-            st.session_state.employees = json.loads(saved_emp_json)
-            st.rerun()
-            
-    with st.container(border=True):
-        st.warning("🔒 **ยังไม่มีข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์เพื่อเริ่มต้น**")
-        uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์ 'ข้อมูล_2.xlsx' ของสถานีคุณ", type=["xlsx"])
-        
-        if uploaded_emp_file is not None:
-            try:
-                df_emp = pd.read_excel(uploaded_emp_file)
-                emp_dict = {}
-                for _, row in df_emp.iterrows():
-                    name = str(row.get("รายชื่อ", "")).strip()
-                    if not name or name == "nan": continue
-                    pos = str(row.get("ตำแหน่ง", "-")).strip()
-                    p_clean = pos.replace(" ", "")
-                    
-                    role = pos
-                    if "นายสถานี" in p_clean or ("นสน" in p_clean and "ช.นสน" not in p_clean): role = "นสน."
-                    elif "ช.นสน.ตช" in p_clean or "ช.นสน.1" in p_clean: role = "ช.นสน.1"
-                    elif "ช.นสน.ตค" in p_clean or "ช.นสน.2" in p_clean: role = "ช.นสน.2"
-                    elif "เสมียน" in p_clean: role = "เสมียน"
-                    elif "ประแจ" in p_clean: role = "ประแจ"
-                    elif "ฉิมพลี" in p_clean: role = "กั้นถนนฯฉิมพลี"
-                    elif "บางระมาด" in p_clean: role = "กั้นถนนฯบางระมาด"
-                    elif "บริการ" in p_clean or "ลูกจ้าง" in p_clean: role = "ลูกจ้าง"
-                    elif "กั้นถนน" in p_clean: role = "อื่นๆ"
-                    else: role = "อื่นๆ"
-                    
-                    emp_id_raw = str(row.get("เลขประจำตัว", "-")) if pd.notna(row.get("เลขประจำตัว")) else "-"
-                    if emp_id_raw.endswith(".0"): emp_id_raw = emp_id_raw[:-2]
-                    
-                    acc1_raw = str(row.get("รหัสบัญชี", "-")) if pd.notna(row.get("รหัสบัญชี")) else "-"
-                    if acc1_raw.endswith(".0"): acc1_raw = acc1_raw[:-2]
-                    
-                    acc2_raw = str(row.get("รหัสบัญชี2", "-")) if pd.notna(row.get("รหัสบัญชี2")) else "-"
-                    if acc2_raw.endswith(".0"): acc2_raw = acc2_raw[:-2]
-                    
-                    group_raw = str(row.get("กลุ่ม", "")).strip()
-                    if group_raw == "nan" or not group_raw: group_raw = role
-                    
-                    unique_key = f"{name}_{role}"
-                    emp_dict[unique_key] = {
-                        "ชื่อ-สกุล": name, "ตำแหน่ง": pos, 
-                        "เลขประจำตัว": emp_id_raw,
-                        "เงินเดือน": str(row.get("เงินเดือน", "-")) if pd.notna(row.get("เงินเดือน")) else "-", 
-                        "เรท": float(row.get("เรท 1 ชั่วโมง", 0)) if pd.notna(row.get("เรท 1 ชั่วโมง")) else 0.0,
-                        "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
-                        "รหัสบัญชี": acc1_raw,
-                        "รหัสบัญชี2": acc2_raw,
-                        "กลุ่ม": group_raw,
-                        "Role": role, "is_regular": True 
-                    }
-                st.session_state.employees = emp_dict
-                local_storage.setItem("srt_employees_data", json.dumps(emp_dict), key=f"ls_emp_{uuid.uuid4().hex}")
-                st.success("✅ โหลดข้อมูลพนักงานสำเร็จ! กำลังเข้าสู่ระบบ...")
-                st.rerun()
-            except Exception as e:
-                st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
-    st.stop()
-
-if 'roster_df' not in st.session_state:
-    saved_df = load_roster_from_local()
-    if saved_df is not None:
-        st.session_state.roster_df = saved_df
-        for _, row in saved_df.iterrows():
-            name = str(row['ชื่อ-สกุล']).strip()
-            role = str(row['Role (หน้าที่)']).strip()
-            unique_key = f"{name}_{role}"
-            if unique_key not in st.session_state.employees:
-                 st.session_state.employees[unique_key] = {
-                        "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
-                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
-                 }
-    else:
-        data = []
-        for i, (key, info) in enumerate(st.session_state.employees.items()):
-            row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
-            for d in range(1, 32): row[str(d)] = ""
-            data.append(row)
-        df = pd.DataFrame(data)
-        for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
-        st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
-        save_roster_to_local(st.session_state.roster_df)
-
-if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
-    st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
-
 saved_global = local_storage.getItem("srt_global_data")
 default_global = {"val_13": "สิงหาคม", "year_be": 2569, "val_7": "5110/2520/2569", "val_8": "29 พ.ค. 69", "val_14": "01 ก.ค. 69", "public_holidays_dict": {}, "remarks_dict": {}}
 try:
@@ -417,7 +443,7 @@ with st.expander("📖 คู่มือการใช้งานระบบ
     - **ทำงานปกติ:** `ว`, `ค`, `ว/ค`, `ค/ว`, `00-12`, `12-24`, `00-24`
     - **วันหยุดประจำสัปดาห์ที่มาทำงาน (เบิก 178):** ให้ใส่วงเล็บเปิด `(` ในวันที่เริ่มหยุด และวงเล็บปิด `)` ในวันสุดท้าย (เช่น `(ว` ... `ว)`)
     - **วันหยุดประจำสัปดาห์ที่ไม่ได้ทำงาน:** พิมพ์รหัส `ย` 
-    - **วันลาพักผ่อน:** พิมพ์รหัส `พ`
+    - **วันลาพักผ่อน/ไปอบรม/ไปศาล:** พิมพ์รหัส `พ`, `อ`, `น`
     
     **3. การพิมพ์หมายเหตุอัตโนมัติ:**
     - เลื่อนไปตั้งค่าใน "📝 ตั้งค่าหมายเหตุอัตโนมัติ" (เช่น รหัส "อ") ระบบจะรวบรวมวันที่ทั้งหมด แล้วพิมพ์ลงใต้คำว่า 'หมายเหตุ' ให้แบบสวยงาม ไม่ซ้ำซ้อน
@@ -558,8 +584,42 @@ with st.container(border=True):
             st.rerun()
 
     with st.expander("👥 จัดการพนักงาน (เพิ่ม / แก้ไข / ลบ)"):
-        tab_add, tab_del = st.tabs(["➕ เพิ่ม/แก้ไขพนักงาน", "❌ ลบพนักงาน"])
+        # 📌 แท็บดึงชื่อจากฐานข้อมูลผู้แทน
+        tab_sub_db, tab_add, tab_del = st.tabs(["📥 ดึงชื่อจากฐานข้อมูลผู้แทน (Sheet 2)", "➕ พิมพ์เพิ่มรายชื่อเอง", "❌ ลบพนักงาน"])
         
+        with tab_sub_db:
+            if 'sub_db' in st.session_state and st.session_state.sub_db:
+                st.info("💡 เลือกรายชื่อผู้แทนที่คุณเตรียมไว้ใน **Sheet ที่ 2** ของไฟล์ `ข้อมูล_2.xlsx` ได้เลยครับ ระบบจะดึงเงินเดือนและรหัสบัญชีมาให้ครบถ้วน")
+                sub_options = [f"{v['ชื่อ-สกุล']} ({v['Role']}) - {v['ตำแหน่ง']}" for v in st.session_state.sub_db.values()]
+                selected_sub_display = st.selectbox("เลือกรายชื่อผู้แทน", sub_options)
+                
+                if st.button("➕ ดึงรายชื่อนี้เพิ่มลงในตารางเวร", type="primary"):
+                    sel_name = selected_sub_display.split(" (")[0]
+                    sel_role = selected_sub_display.split(" (")[1].split(")")[0]
+                    sub_key = f"{sel_name}_{sel_role}"
+                    
+                    exists = any((r['ชื่อ-สกุล'] == sel_name and r['Role (หน้าที่)'] == sel_role) for _, r in st.session_state.roster_df.iterrows())
+                    if exists:
+                        st.warning("⚠️ พนักงานคนนี้อยู่ในตารางเวรแล้วครับ ไม่สามารถเพิ่มซ้ำได้")
+                    else:
+                        st.session_state.employees[sub_key] = st.session_state.sub_db[sub_key].copy()
+                        
+                        new_idx = len(st.session_state.roster_df) + 1
+                        new_row = {"ขึ้นหน้าใหม่": False, "ลำดับ": new_idx, "ชื่อ-สกุล": sel_name, "ตำแหน่งเบิก": st.session_state.sub_db[sub_key]['ตำแหน่ง'], "Role (หน้าที่)": sel_role}
+                        for d in range(1, 32): new_row[str(d)] = ""
+                        
+                        new_df = pd.DataFrame([new_row])
+                        updated_df = pd.concat([st.session_state.roster_df, new_df], ignore_index=True)
+                        st.session_state.roster_df = sort_roster_by_role(updated_df, st.session_state.employees)
+                        
+                        save_roster_to_local(st.session_state.roster_df)
+                        local_storage.setItem("srt_employees_data", json.dumps(st.session_state.employees), key=f"ls_emp_{uuid.uuid4().hex}")
+                        
+                        st.success(f"✅ ดึงชื่อ {sel_name} ลงตารางเรียบร้อยแล้ว!")
+                        st.rerun()
+            else:
+                st.warning("⚠️ ไม่พบฐานข้อมูลผู้แทน กรุณาสร้าง **Sheet ที่ 2** ในไฟล์ `ข้อมูล_2.xlsx` แล้วกดปุ่มล้างข้อมูลเพื่ออัปโหลดไฟล์ใหม่ครับ")
+
         with tab_add:
             with st.form("add_emp_form"):
                 groups_list = list(dict.fromkeys([v.get("กลุ่ม", v.get("Role", "อื่นๆ")) for v in st.session_state.employees.values()]))
@@ -574,7 +634,7 @@ with st.container(border=True):
                 new_group = c4.selectbox("กลุ่ม (เพื่อจัดเรียงต่อท้ายคนประจำ)", groups_list)
                 new_rate = c5.number_input("เรท 1 ชม. (บาท)", min_value=0.0, value=0.0)
                 
-                if st.form_submit_button("บันทึกข้อมูลพนักงาน", type="primary"):
+                if st.form_submit_button("บันทึกข้อมูลพนักงาน", type="secondary"):
                     if new_name.strip() == "" or new_pos.strip() == "": st.error("กรุณากรอก ชื่อ และ ตำแหน่ง!")
                     else:
                         unique_key = f"{new_name}_{new_role}"
@@ -647,7 +707,7 @@ with st.container(border=True):
         
         display_df = st.session_state.roster_df.copy()
         
-        # 📌 แก้ปัญหา MultiIndex Error: นำ "ลำดับ" และ "ชื่อ" มัดรวมกันเป็นคอลัมน์เดียว
+        # 📌 นำ "ลำดับ" และ "ชื่อ" มัดรวมกันเป็นคอลัมน์เดียวเพื่อแช่แข็งคู่
         display_df["ลำดับ_ชื่อ"] = display_df["ลำดับ"].astype(str) + ". " + display_df["ชื่อ-สกุล"]
         display_df = display_df.set_index("ลำดับ_ชื่อ")
 
@@ -655,7 +715,7 @@ with st.container(border=True):
             display_df[display_cols], 
             use_container_width=True, 
             column_config=column_config, 
-            num_rows="fixed", # ล็อกไว้ไม่ให้เด้ง Error ตอนพิมพ์
+            num_rows="fixed",
             key="roster_table"
         )
         
@@ -758,7 +818,7 @@ for d in range(1, num_days + 1):
     reg_nsn_shift = day_info['นสน.']['reg'][0]['shift'] if day_info['นสน.']['reg'] else ""
     for p in day_info['นสน.']['sub']:
         if p['shift'] not in leave_types:
-            if reg_nsn_shift not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "ล", "ลา", "น"]:
+            if reg_nsn_shift not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "ล", "ลา", "น", "อ"]:
                 validator_errors.append(f"วันที่ {d}: {p['name']} (มาแทน นสน.) เข้าเวรไม่ได้ เพราะนายสถานีตัวจริงไม่ได้ลา (ตัวจริงลง '{reg_nsn_shift}')")
                 
     def get_active(role_str):
@@ -1039,9 +1099,9 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         
         # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาดหมดจด (ลบเฉพาะคอลัมน์ 1 ถึง 7, ปลอดภัยต่อหมายเหตุ)
         if day > num_days:
-            set_cell_val_color(row, 1, "", "000000") # ลบวันที่
-            set_cell_val_color(row, 2, "", "000000") # ลบเวลา
-            for col in range(3, 8): set_cell_val_color(row, col, "", "000000") # ลบชั่วโมงและเงิน
+            set_cell_val_color(row, 1, "", "000000") 
+            set_cell_val_color(row, 2, "", "000000") 
+            for col in range(3, 8): set_cell_val_color(row, col, "", "000000") 
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
@@ -1223,9 +1283,9 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 ws.cell(row=row, column=col).value = None
 
         if day > num_days:
-            continue # ไม่เขียนวันที่ลงไป ทำให้ช่องว่างสะอาด
+            continue 
             
-        ws.cell(row=row, column=1).value = str(day) # เขียนวันที่
+        ws.cell(row=row, column=1).value = str(day) 
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
         if "(" in shift_raw: is_in_weekly_period = True
@@ -1405,11 +1465,11 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
         # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
             apply_style(row, 1, "", "000000") # ลบวันที่ออก
-            for c in range(2, 8): 
+            for c in range(2, 11): 
                 cell = ws.cell(row=row, column=c)
-                cell.value = None
-                cell.border = thin_border
-            apply_style(row, 8, "", "000000") # ลบหน้าที่
+                if type(cell).__name__ != 'MergedCell':
+                    cell.value = None
+                    cell.border = thin_border
             continue
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
