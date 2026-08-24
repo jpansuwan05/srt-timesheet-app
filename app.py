@@ -438,7 +438,7 @@ first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 with st.expander("📖 คู่มือการใช้งานระบบ (คลิกเพื่ออ่านคำแนะนำ)"):
     st.markdown("""
     **1. การตั้งค่าเริ่มต้น:**
-    - อัปโหลดไฟล์ `ข้อมูล_3.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
+    - อัปโหลดไฟล์ `ข้อมูล_...xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
     - สามารถเปลี่ยนเดือน, ปี พ.ศ., และกำหนดวันหยุดนักขัตฤกษ์ได้ในส่วน "ตั้งค่าข้อมูลส่วนกลาง"
     
     **2. การพิมพ์รหัสในตารางเวร (Master Data):**
@@ -998,15 +998,15 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
             
             c_name = ws.cell(row=current_excel_row, column=2)
             c_name.value = str(row_data['ชื่อ-สกุล']).strip()
-            # 📌 ปรับให้ออโต้ลดขนาดฟอนต์ถ้าชื่อยาวเกิน
+            # 📌 ปิดโหมดปัดบรรทัด เพื่อป้องกันตารางเสียทรง
             al = c_name.alignment
-            c_name.alignment = Alignment(horizontal=al.horizontal if al else 'left', vertical=al.vertical if al else 'center', wrap_text=False, shrink_to_fit=True)
+            c_name.alignment = Alignment(horizontal=al.horizontal if al else 'left', vertical=al.vertical if al else 'center', wrap_text=False)
             
             c_pos = ws.cell(row=current_excel_row+1, column=2)
             c_pos.value = str(row_data['ตำแหน่งเบิก']).strip()
-            # 📌 ปรับให้ออโต้ลดขนาดฟอนต์ถ้าตำแหน่งยาวเกิน
+            # 📌 ปิดโหมดปัดบรรทัด เพื่อป้องกันตารางเสียทรง
             al2 = c_pos.alignment
-            c_pos.alignment = Alignment(horizontal=al2.horizontal if al2 else 'left', vertical=al2.vertical if al2 else 'center', wrap_text=False, shrink_to_fit=True)
+            c_pos.alignment = Alignment(horizontal=al2.horizontal if al2 else 'left', vertical=al2.vertical if al2 else 'center', wrap_text=False)
             
             role_val = str(row_data.get('Role (หน้าที่)', '')).strip()
             
@@ -1086,16 +1086,18 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดโหมด Shrink to Fit ให้ชื่อและตำแหน่ง
+                    # 📌 เปิดใช้งาน wrap_text=False ป้องกันการตกบรรทัดใหม่
                     if "[1]" in val or "[NAME]" in val:
                         al = c_cell.alignment
                         c_cell.alignment = Alignment(
                             horizontal=al.horizontal if al else 'center',
                             vertical=al.vertical if al else 'center',
-                            wrap_text=False,
-                            shrink_to_fit=True
+                            wrap_text=False
                         )
                 
+    # 📌 เติมบรรทัดนี้กลับมาแล้วครับ ขออภัยที่ทำตกหล่นไป
+    start_row = 7 
+    
     rate_val = float(emp_info.get("เรท", 0.0))
     rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
     rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
@@ -1273,14 +1275,13 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                         new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดโหมด Shrink to Fit ให้ชื่อและตำแหน่ง
+                    # 📌 เปิดใช้งาน wrap_text=False (ยกเลิก shrink_to_fit เพื่อไม่ให้ฟอนต์เล็ก)
                     if "[1]" in val or "[NAME]" in val:
                         al = c_cell.alignment
                         c_cell.alignment = Alignment(
                             horizontal=al.horizontal if al else 'center',
                             vertical=al.vertical if al else 'center',
-                            wrap_text=False,
-                            shrink_to_fit=True
+                            wrap_text=False
                         )
 
     rate_val = float(emp_info.get("เรท", 0.0))
@@ -1464,14 +1465,13 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดโหมด Shrink to Fit ให้ชื่อและตำแหน่ง
+                    # 📌 เปิดใช้งาน wrap_text=False (ยกเลิก shrink_to_fit เพื่อไม่ให้ฟอนต์เล็ก)
                     if "[1]" in val or "[NAME]" in val:
                         al = c_cell.alignment
                         c_cell.alignment = Alignment(
                             horizontal=al.horizontal if al else 'center',
                             vertical=al.vertical if al else 'center',
-                            wrap_text=False,
-                            shrink_to_fit=True
+                            wrap_text=False
                         )
 
     if type(ws.cell(row=2, column=7)).__name__ != 'MergedCell':
