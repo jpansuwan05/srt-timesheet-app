@@ -224,6 +224,7 @@ def sort_roster_by_role(df, emp_dict):
     temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
     return temp_df.drop(columns=['sort_key'])
 
+# 📌 อัปเดตฟังก์ชันให้อ่าน "เรท 4 ชั่วโมง" และ "เรท 1 วัน" ได้
 def parse_employee_dataframe(df_input, is_regular_worker=True):
     result_dict = {}
     for _, row in df_input.iterrows():
@@ -262,6 +263,8 @@ def parse_employee_dataframe(df_input, is_regular_worker=True):
             "เลขประจำตัว": emp_id_raw,
             "เงินเดือน": str(row.get("เงินเดือน", "-")) if pd.notna(row.get("เงินเดือน")) else "-", 
             "เรท": float(row.get("เรท 1 ชั่วโมง", 0)) if pd.notna(row.get("เรท 1 ชั่วโมง")) else 0.0,
+            "เรท_4ชม": float(row.get("เรท 4 ชั่วโมง", 0)) if pd.notna(row.get("เรท 4 ชั่วโมง")) else 0.0,
+            "เรท_1วัน": float(row.get("เรท 1 วัน", 0)) if pd.notna(row.get("เรท 1 วัน")) else 0.0,
             "ประเภทบัญชี": str(row.get("ประเภทบัญชี", "-")) if pd.notna(row.get("ประเภทบัญชี")) else "-", 
             "รหัสบัญชี": acc1_raw,
             "รหัสบัญชี2": acc2_raw,
@@ -292,7 +295,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
             st.rerun()
             
     with st.container(border=True):
-        st.warning("🔒 **ยังไม่มีข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์ 'ข้อมูล_2.xlsx' เพื่อเริ่มต้น**")
+        st.warning("🔒 **ยังไม่มีข้อมูลพนักงานในระบบ กรุณาอัปโหลดไฟล์ 'ข้อมูล_...xlsx' เพื่อเริ่มต้น**")
         st.info("💡 **เคล็ดลับ:** หากต้องการให้ระบบจำ 'ฐานข้อมูลผู้แทน' ให้สร้าง Sheet ที่ 2 ในไฟล์ Excel และใส่รายชื่อผู้แทนเตรียมไว้ได้เลยครับ")
         uploaded_emp_file = st.file_uploader("📂 อัปโหลดไฟล์", type=["xlsx"])
         
@@ -334,7 +337,8 @@ if 'roster_df' not in st.session_state:
             if unique_key not in st.session_state.employees:
                  st.session_state.employees[unique_key] = {
                         "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
-                        "เงินเดือน": "-", "เรท": 0.0, "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
+                        "เงินเดือน": "-", "เรท": 0.0, "เรท_4ชม": 0.0, "เรท_1วัน": 0.0,
+                        "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
                  }
     else:
         data = []
@@ -351,7 +355,7 @@ if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.colu
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
 
 # ==========================================
-# 1. เมนูแถบด้านข้าง (Sidebar) - ย้ายลงมาตรงนี้เพื่อให้ปุ่มเซฟทำงานได้ถูกต้อง!
+# 1. เมนูแถบด้านข้าง (Sidebar)
 # ==========================================
 with st.sidebar:
     st.markdown("## 🚂 เมนูหลัก")
@@ -366,7 +370,6 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 💾 สำรองข้อมูลตารางเวร")
-    # 📌 ตอนนี้ปุ่มสำรองข้อมูลจะโชว์เสมอแน่นอน เพราะเราโหลดข้อมูล roster_df เสร็จเรียบร้อยแล้ว!
     if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
@@ -397,7 +400,7 @@ with st.sidebar:
                     if ukey not in st.session_state.employees:
                         st.session_state.employees[ukey] = {
                             "ชื่อ-สกุล": n, "ตำแหน่ง": str(row.get('ตำแหน่งเบิก', '')).strip(), 
-                            "เลขประจำตัว": "-", "เงินเดือน": "-", "เรท": 0.0, 
+                            "เลขประจำตัว": "-", "เงินเดือน": "-", "เรท": 0.0, "เรท_4ชม": 0.0, "เรท_1วัน": 0.0,
                             "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", 
                             "กลุ่ม": r, "Role": r, "is_regular": False
                         }
@@ -436,7 +439,7 @@ first_weekday, num_days = calendar.monthrange(year_ce, month_idx)
 with st.expander("📖 คู่มือการใช้งานระบบ (คลิกเพื่ออ่านคำแนะนำ)"):
     st.markdown("""
     **1. การตั้งค่าเริ่มต้น:**
-    - อัปโหลดไฟล์ `ข้อมูล_2.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
+    - อัปโหลดไฟล์ `ข้อมูล_3.xlsx` ในกล่องสีเหลือง เพื่อดึงฐานข้อมูลพนักงาน
     - สามารถเปลี่ยนเดือน, ปี พ.ศ., และกำหนดวันหยุดนักขัตฤกษ์ได้ในส่วน "ตั้งค่าข้อมูลส่วนกลาง"
     
     **2. การพิมพ์รหัสในตารางเวร (Master Data):**
@@ -589,7 +592,7 @@ with st.container(border=True):
         
         with tab_sub_db:
             if 'sub_db' in st.session_state and st.session_state.sub_db:
-                st.info("💡 เลือกรายชื่อผู้แทนที่คุณเตรียมไว้ใน **Sheet ที่ 2** ของไฟล์ `ข้อมูล_2.xlsx` ได้เลยครับ ระบบจะดึงเงินเดือนและรหัสบัญชีมาให้ครบถ้วน")
+                st.info("💡 เลือกรายชื่อผู้แทนที่คุณเตรียมไว้ใน **Sheet ที่ 2** ของไฟล์ `ข้อมูล...xlsx` ได้เลยครับ ระบบจะดึงเงินเดือนและรหัสบัญชีมาให้ครบถ้วน")
                 sub_options = [f"{v['ชื่อ-สกุล']} ({v['Role']}) - {v['ตำแหน่ง']}" for v in st.session_state.sub_db.values()]
                 selected_sub_display = st.selectbox("เลือกรายชื่อผู้แทน", sub_options)
                 
@@ -618,7 +621,7 @@ with st.container(border=True):
                         st.success(f"✅ ดึงชื่อ {sel_name} ลงตารางเรียบร้อยแล้ว!")
                         st.rerun()
             else:
-                st.warning("⚠️ ไม่พบฐานข้อมูลผู้แทน กรุณาสร้าง **Sheet ที่ 2** ในไฟล์ `ข้อมูล_2.xlsx` แล้วกดปุ่มล้างข้อมูลเพื่ออัปโหลดไฟล์ใหม่ครับ")
+                st.warning("⚠️ ไม่พบฐานข้อมูลผู้แทน กรุณาสร้าง **Sheet ที่ 2** ในไฟล์ `ข้อมูล...xlsx` แล้วกดปุ่มล้างข้อมูลเพื่ออัปโหลดไฟล์ใหม่ครับ")
 
         with tab_add:
             with st.form("add_emp_form"):
@@ -647,6 +650,8 @@ with st.container(border=True):
                             "เลขประจำตัว": old_data.get("เลขประจำตัว", "-"), 
                             "เงินเดือน": old_salary, 
                             "เรท": new_rate if new_rate > 0 else old_rate, 
+                            "เรท_4ชม": old_data.get("เรท_4ชม", 0.0), # เก็บค่าเรทใหม่ไว้
+                            "เรท_1วัน": old_data.get("เรท_1วัน", 0.0), # เก็บค่าเรทใหม่ไว้
                             "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
                             "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
                             "รหัสบัญชี2": old_data.get("รหัสบัญชี2", "-"), 
@@ -1075,12 +1080,15 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
                 
-    start_row = 7
-    rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
+    # 📌 ดึงเรทจากฐานข้อมูลใหม่มาใช้
+    rate_val = float(emp_info.get("เรท", 0.0))
+    rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
+    rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
     rate_baht = int(rate_val)
     rate_satang = int(round((rate_val - rate_baht) * 100))
     
     sum_hours = 0 
+    grand_total_money = 0.0 # รวมเงินเป๊ะๆ ทีละบรรทัด
     code_days_177 = {}
     
     def set_cell_val_color(r, c, val, color_hex="000000"):
@@ -1097,7 +1105,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     for day in range(1, 32):
         row = start_row + day - 1
         
-        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาดหมดจด (ลบเฉพาะคอลัมน์ 1 ถึง 7, ปลอดภัยต่อหมายเหตุ)
         if day > num_days:
             set_cell_val_color(row, 1, "", "000000") 
             set_cell_val_color(row, 2, "", "000000") 
@@ -1118,7 +1125,17 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         if sData and sData["hours"] != "-":
             hours_val = int(sData["hours"])
             sum_hours += hours_val 
-            total_money = hours_val * rate_val
+            
+            # 📌 ถ้าระบุเรท 4 ชม มาให้ใช้ตัวเลขนั้นเลย ป้องกันทศนิยมเพี้ยน
+            if hours_val == 4 and rate_4_val > 0:
+                total_money = rate_4_val
+            elif hours_val == 8 and rate_1d_val > 0:
+                total_money = rate_1d_val
+            else:
+                total_money = hours_val * rate_val
+                
+            grand_total_money += total_money
+            
             total_baht = int(total_money)
             total_satang = int(round((total_money - total_baht) * 100))
 
@@ -1134,7 +1151,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             for col in range(3, 8): 
                 set_cell_val_color(row, col, "-", font_color)
                     
-    grand_total_money = sum_hours * rate_val
     grand_total_baht = int(grand_total_money)
     grand_total_satang = int(round((grand_total_money - grand_total_baht) * 100))
     
@@ -1243,8 +1259,10 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                         new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
 
-    rate_val = float(emp_info["เรท"]) if emp_info["เรท"] else 0.0
-    daily_rate = rate_val * 8
+    # 📌 ดึงเรทจากฐานข้อมูลใหม่มาใช้
+    rate_val = float(emp_info.get("เรท", 0.0))
+    daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
+    daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
     
     if type(ws.cell(row=3, column=12)).__name__ != 'MergedCell': ws.cell(row=3, column=12).value = rate_val
     if type(ws.cell(row=5, column=12)).__name__ != 'MergedCell': ws.cell(row=5, column=12).value = daily_rate
@@ -1277,7 +1295,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     for day in range(1, 32):
         row = start_row + day
         
-        # 📌 เคลียร์เฉพาะช่องข้อมูล (คอลัมน์ 1 ถึง 10) ห้ามยุ่งกับคอลัมน์ 11-12
         for col in range(1, 11):
             if type(ws.cell(row=row, column=col)).__name__ != 'MergedCell':
                 ws.cell(row=row, column=col).value = None
@@ -1316,6 +1333,8 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 if t2_start: ws.cell(row=row, column=6).value = t2_start
                 if t2_end: ws.cell(row=row, column=7).value = t2_end
                 ws.cell(row=row, column=8).value = 1 
+                
+                # 📌 ยัดเรทเต็มวัน 1871.66 ลงช่องนี้โดยตรง
                 ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
@@ -1462,9 +1481,8 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     for day in range(1, 32):
         row = start_row + day - 1
         
-        # 📌 เคลียร์ช่องวันที่เกินออกจากหน้ากระดาษให้สะอาด
         if day > num_days:
-            apply_style(row, 1, "", "000000") # ลบวันที่ออก
+            apply_style(row, 1, "", "000000") 
             for c in range(2, 11): 
                 cell = ws.cell(row=row, column=c)
                 if type(cell).__name__ != 'MergedCell':
@@ -1687,17 +1705,25 @@ with st.container(border=True):
                     except:
                         continue
                     
-                    rate_val = float(emp_info["เรท"]) if emp_info.get("เรท") else 0.0
+                    rate_val = float(emp_info.get("เรท", 0.0))
+                    rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
+                    rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
                     
                     sum_hours = 0
+                    total_money = 0.0
                     for d in range(1, num_days + 1):
                         shift_raw = str(emp_row.get(str(d), "")).strip()
                         shift_clean = shift_raw.replace("(", "").replace(")", "")
                         sData = shift_data.get(shift_clean)
                         if sData and sData.get("hours", "-") != "-":
-                            sum_hours += int(sData["hours"])
-                            
-                    total_money = sum_hours * rate_val
+                            h = int(sData["hours"])
+                            sum_hours += h
+                            if h == 4 and rate_4_val > 0:
+                                total_money += rate_4_val
+                            elif h == 8 and rate_1d_val > 0:
+                                total_money += rate_1d_val
+                            else:
+                                total_money += h * rate_val
                     
                     roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
                     val_4, val_5, val_17, _, _, _, _ = extract_employee_stats(roster_dict)
@@ -1705,7 +1731,6 @@ with st.container(border=True):
                     summary_list.append({
                         "ชื่อ-สกุล": emp_info["ชื่อ-สกุล"],
                         "ตำแหน่ง": emp_info["Role"],
-                        "เรท/ชม.": f"{rate_val:,.2f}",
                         "รวมชั่วโมง (177)": sum_hours,
                         "รวมเงิน 177 (บาท)": f"{total_money:,.2f}",
                         "วันหยุดมาทำ (178)": val_5,
