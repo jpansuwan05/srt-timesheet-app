@@ -224,7 +224,6 @@ def sort_roster_by_role(df, emp_dict):
     temp_df['ลำดับ'] = range(1, len(temp_df) + 1)
     return temp_df.drop(columns=['sort_key'])
 
-# 📌 อัปเดตฟังก์ชันให้อ่าน "เรท 4 ชั่วโมง" และ "เรท 1 วัน" ได้
 def parse_employee_dataframe(df_input, is_regular_worker=True):
     result_dict = {}
     for _, row in df_input.iterrows():
@@ -587,12 +586,11 @@ with st.container(border=True):
             st.rerun()
 
     with st.expander("👥 จัดการพนักงาน (เพิ่ม / แก้ไข / ลบ)"):
-        # 📌 แท็บดึงชื่อจากฐานข้อมูลผู้แทน
         tab_sub_db, tab_add, tab_del = st.tabs(["📥 ดึงชื่อจากฐานข้อมูลผู้แทน (Sheet 2)", "➕ พิมพ์เพิ่มรายชื่อเอง", "❌ ลบพนักงาน"])
         
         with tab_sub_db:
             if 'sub_db' in st.session_state and st.session_state.sub_db:
-                st.info("💡 เลือกรายชื่อผู้แทนที่คุณเตรียมไว้ใน **Sheet ที่ 2** ของไฟล์ `ข้อมูล...xlsx` ได้เลยครับ ระบบจะดึงเงินเดือนและรหัสบัญชีมาให้ครบถ้วน")
+                st.info("💡 เลือกรายชื่อผู้แทนที่คุณเตรียมไว้ใน **Sheet ที่ 2** ของไฟล์ Excel ได้เลยครับ ระบบจะดึงเงินเดือนและรหัสบัญชีมาให้ครบถ้วน")
                 sub_options = [f"{v['ชื่อ-สกุล']} ({v['Role']}) - {v['ตำแหน่ง']}" for v in st.session_state.sub_db.values()]
                 selected_sub_display = st.selectbox("เลือกรายชื่อผู้แทน", sub_options)
                 
@@ -621,7 +619,7 @@ with st.container(border=True):
                         st.success(f"✅ ดึงชื่อ {sel_name} ลงตารางเรียบร้อยแล้ว!")
                         st.rerun()
             else:
-                st.warning("⚠️ ไม่พบฐานข้อมูลผู้แทน กรุณาสร้าง **Sheet ที่ 2** ในไฟล์ `ข้อมูล...xlsx` แล้วกดปุ่มล้างข้อมูลเพื่ออัปโหลดไฟล์ใหม่ครับ")
+                st.warning("⚠️ ไม่พบฐานข้อมูลผู้แทน กรุณาสร้าง **Sheet ที่ 2** ในไฟล์ Excel แล้วกดปุ่มล้างข้อมูลเพื่ออัปโหลดไฟล์ใหม่ครับ")
 
         with tab_add:
             with st.form("add_emp_form"):
@@ -650,8 +648,8 @@ with st.container(border=True):
                             "เลขประจำตัว": old_data.get("เลขประจำตัว", "-"), 
                             "เงินเดือน": old_salary, 
                             "เรท": new_rate if new_rate > 0 else old_rate, 
-                            "เรท_4ชม": old_data.get("เรท_4ชม", 0.0), # เก็บค่าเรทใหม่ไว้
-                            "เรท_1วัน": old_data.get("เรท_1วัน", 0.0), # เก็บค่าเรทใหม่ไว้
+                            "เรท_4ชม": old_data.get("เรท_4ชม", 0.0), 
+                            "เรท_1วัน": old_data.get("เรท_1วัน", 0.0), 
                             "ประเภทบัญชี": old_data.get("ประเภทบัญชี", "-"), 
                             "รหัสบัญชี": old_data.get("รหัสบัญชี", "-"), 
                             "รหัสบัญชี2": old_data.get("รหัสบัญชี2", "-"), 
@@ -712,7 +710,6 @@ with st.container(border=True):
         
         display_df = st.session_state.roster_df.copy()
         
-        # 📌 นำ "ลำดับ" และ "ชื่อ" มัดรวมกันเป็นคอลัมน์เดียวเพื่อแช่แข็งคู่
         display_df["ลำดับ_ชื่อ"] = display_df["ลำดับ"].astype(str) + ". " + display_df["ชื่อ-สกุล"]
         display_df = display_df.set_index("ลำดับ_ชื่อ")
 
@@ -727,14 +724,11 @@ with st.container(border=True):
         submit_roster = st.form_submit_button("💾 บันทึกตารางเวรและตรวจสอบความถูกต้อง", type="primary", use_container_width=True)
         
         if submit_roster:
-            # คืนค่ากลับมาเป็น Dataframe ปกติ
             edited_df = edited_display_df.reset_index()
             
-            # 📌 แยก "ลำดับ" และ "ชื่อ" กลับคืนที่เดิม
             edited_df["ลำดับ"] = edited_df["ลำดับ_ชื่อ"].apply(lambda x: int(x.split(". ", 1)[0]) if ". " in str(x) and x.split(". ", 1)[0].isdigit() else 0)
             edited_df["ชื่อ-สกุล"] = edited_df["ลำดับ_ชื่อ"].apply(lambda x: x.split(". ", 1)[1] if ". " in str(x) else x)
             
-            # เติมคอลัมน์วันที่หายไป (เช่น 31) กลับมาเป็นค่าว่าง เพื่อรักษาโครงสร้างข้อมูลก่อนเซฟ
             for d in range(num_days + 1, 32):
                 edited_df[str(d)] = ""
 
@@ -999,9 +993,21 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
         
         current_excel_row = 8
         for row_data in page_data:
-            ws.cell(row=current_excel_row, column=1).value = row_data['ลำดับ']
-            ws.cell(row=current_excel_row, column=2).value = str(row_data['ชื่อ-สกุล']).strip()
-            ws.cell(row=current_excel_row+1, column=2).value = str(row_data['ตำแหน่งเบิก']).strip()
+            c_name = ws.cell(row=current_excel_row, column=1)
+            c_name.value = row_data['ลำดับ']
+            
+            c_name = ws.cell(row=current_excel_row, column=2)
+            c_name.value = str(row_data['ชื่อ-สกุล']).strip()
+            # 📌 ปรับให้ออโต้ลดขนาดฟอนต์ถ้าชื่อยาวเกิน
+            al = c_name.alignment
+            c_name.alignment = Alignment(horizontal=al.horizontal if al else 'left', vertical=al.vertical if al else 'center', wrap_text=False, shrink_to_fit=True)
+            
+            c_pos = ws.cell(row=current_excel_row+1, column=2)
+            c_pos.value = str(row_data['ตำแหน่งเบิก']).strip()
+            # 📌 ปรับให้ออโต้ลดขนาดฟอนต์ถ้าตำแหน่งยาวเกิน
+            al2 = c_pos.alignment
+            c_pos.alignment = Alignment(horizontal=al2.horizontal if al2 else 'left', vertical=al2.vertical if al2 else 'center', wrap_text=False, shrink_to_fit=True)
+            
             role_val = str(row_data.get('Role (หน้าที่)', '')).strip()
             
             for d in range(1, 32):
@@ -1078,9 +1084,18 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             if val and isinstance(val, str) and "[" in val:
                 new_val = val
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
-                if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
+                if type(c_cell).__name__ != 'MergedCell': 
+                    c_cell.value = new_val
+                    # 📌 เปิดโหมด Shrink to Fit ให้ชื่อและตำแหน่ง
+                    if "[1]" in val or "[NAME]" in val:
+                        al = c_cell.alignment
+                        c_cell.alignment = Alignment(
+                            horizontal=al.horizontal if al else 'center',
+                            vertical=al.vertical if al else 'center',
+                            wrap_text=False,
+                            shrink_to_fit=True
+                        )
                 
-    # 📌 ดึงเรทจากฐานข้อมูลใหม่มาใช้
     rate_val = float(emp_info.get("เรท", 0.0))
     rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
     rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
@@ -1088,7 +1103,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     rate_satang = int(round((rate_val - rate_baht) * 100))
     
     sum_hours = 0 
-    grand_total_money = 0.0 # รวมเงินเป๊ะๆ ทีละบรรทัด
+    grand_total_money = 0.0
     code_days_177 = {}
     
     def set_cell_val_color(r, c, val, color_hex="000000"):
@@ -1126,7 +1141,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
             hours_val = int(sData["hours"])
             sum_hours += hours_val 
             
-            # 📌 ถ้าระบุเรท 4 ชม มาให้ใช้ตัวเลขนั้นเลย ป้องกันทศนิยมเพี้ยน
             if hours_val == 4 and rate_4_val > 0:
                 total_money = rate_4_val
             elif hours_val == 8 and rate_1d_val > 0:
@@ -1257,9 +1271,18 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 for k, v in replacements.items(): 
                     if k in new_val:
                         new_val = new_val.replace(k, str(v))
-                if type(c_cell).__name__ != 'MergedCell': c_cell.value = new_val
+                if type(c_cell).__name__ != 'MergedCell': 
+                    c_cell.value = new_val
+                    # 📌 เปิดโหมด Shrink to Fit ให้ชื่อและตำแหน่ง
+                    if "[1]" in val or "[NAME]" in val:
+                        al = c_cell.alignment
+                        c_cell.alignment = Alignment(
+                            horizontal=al.horizontal if al else 'center',
+                            vertical=al.vertical if al else 'center',
+                            wrap_text=False,
+                            shrink_to_fit=True
+                        )
 
-    # 📌 ดึงเรทจากฐานข้อมูลใหม่มาใช้
     rate_val = float(emp_info.get("เรท", 0.0))
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
     daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
@@ -1334,7 +1357,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 if t2_end: ws.cell(row=row, column=7).value = t2_end
                 ws.cell(row=row, column=8).value = 1 
                 
-                # 📌 ยัดเรทเต็มวัน 1871.66 ลงช่องนี้โดยตรง
                 ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
@@ -1442,6 +1464,15 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
+                    # 📌 เปิดโหมด Shrink to Fit ให้ชื่อและตำแหน่ง
+                    if "[1]" in val or "[NAME]" in val:
+                        al = c_cell.alignment
+                        c_cell.alignment = Alignment(
+                            horizontal=al.horizontal if al else 'center',
+                            vertical=al.vertical if al else 'center',
+                            wrap_text=False,
+                            shrink_to_fit=True
+                        )
 
     if type(ws.cell(row=2, column=7)).__name__ != 'MergedCell':
         ws.cell(row=2, column=7).value = global_vars["val_13"]
