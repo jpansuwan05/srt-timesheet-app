@@ -1120,13 +1120,12 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                             shrink_to_fit=True
                         )
                 
-    # 📌 3. ระบบเรดาร์ค้นหา "หัวตาราง" อัตโนมัติ (Dynamic Rows) แบบข้ามหัวกระดาษ
+    # 📌 ระบบเรดาร์รุ่นใหม่ล่าสุด (ยึดเลข 1 ในคอลัมน์แรกเป็นหลัก)
     start_row = 7
-    for r in range(5, 15): # เริ่มหาที่บรรทัด 5 ป้องกันเจอข้อความบนหัวกระดาษ
-        val1 = str(ws.cell(row=r, column=1).value).replace(" ", "")
-        val2 = str(ws.cell(row=r, column=2).value).replace(" ", "")
-        if "ลักษณะงาน" in val2 or "สถานที่" in val2 or "วันที่" in val1:
-            start_row = r + 1
+    for r in range(5, 15): 
+        val1 = str(ws.cell(row=r, column=1).value).strip()
+        if val1 == "1" or val1 == "1.0":
+            start_row = r
             break
             
     offset = start_row - 7 
@@ -1242,7 +1241,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         if ref:
             remarks_to_print_177.append(ref)
             
-    remark_row_start = 21 + offset 
+    remark_row_start = 21 + offset
     remark_col = 8
     for c in [8, 9, 10, 11, 12]:
         found = False
@@ -1347,14 +1346,14 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
     daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
     
-    # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ (แบบข้ามหัวกระดาษ ป้องกัน Error)
+    # 📌 ระบบเรดาร์รุ่นใหม่ล่าสุด (ยึดเลข 1 ในคอลัมน์แรกเป็นหลัก)
     start_row = 7
     for r in range(5, 15):
-        val1 = str(ws.cell(row=r, column=1).value).replace(" ", "")
-        val2 = str(ws.cell(row=r, column=2).value).replace(" ", "")
-        if "ชื่อวันหยุด" in val2 or "วันที่" in val1:
-            start_row = r
+        val1 = str(ws.cell(row=r, column=1).value).strip()
+        if val1 == "1" or val1 == "1.0":
+            start_row = r - 1 # สำหรับ 178 บรรทัดที่ 1 จะถูกบวก 1 อีกทีในลูป
             break
+            
     offset = start_row - 7
     
     if type(ws.cell(row=3 + offset, column=12)).__name__ != 'MergedCell': ws.cell(row=3 + offset, column=12).value = rate_val
@@ -1394,7 +1393,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if day > num_days:
             continue 
             
-        # 📌 ป้องกันการเขียนทับเซลล์ที่ผสานไว้ (เกราะกัน Error AttributeError)
         c_day = ws.cell(row=row, column=1)
         if type(c_day).__name__ != 'MergedCell':
             c_day.value = str(day) 
@@ -1449,14 +1447,35 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                     
         if ")" in shift_raw: is_in_weekly_period = False
                     
-    if type(ws.cell(row=39 + offset, column=8)).__name__ != 'MergedCell': ws.cell(row=39 + offset, column=8).value = None
-    if type(ws.cell(row=40 + offset, column=8)).__name__ != 'MergedCell': ws.cell(row=40 + offset, column=8).value = None
-    
     total_days_final = weekly_holiday_count + public_holiday_count
-    ws.cell(row=39 + offset, column=8).value = total_days_final
     
-    if type(ws.cell(row=42 + offset, column=8)).__name__ != 'MergedCell':
-        ws.cell(row=42 + offset, column=8).value = f"=SUM(H{39+offset}:H{41+offset})"
+    # 📌 การหาบรรทัดยอดรวมอัตโนมัติ ไม่ให้เพี้ยนแน่นอน
+    type_acc_row = 39 + offset
+    total_row = 42 + offset
+    
+    for r in range(start_row + 25, 60):
+        val1 = str(ws.cell(row=r, column=1).value).replace(" ", "")
+        if "ประเภทบัญชี" in val1:
+            type_acc_row = r
+            break
+            
+    for r in range(type_acc_row, 65):
+        val1 = str(ws.cell(row=r, column=1).value).replace(" ", "")
+        if "รวมเงิน" in val1:
+            total_row = r
+            break
+            
+    if type(ws.cell(row=type_acc_row, column=8)).__name__ != 'MergedCell': 
+        ws.cell(row=type_acc_row, column=8).value = None
+    if type(ws.cell(row=type_acc_row+1, column=8)).__name__ != 'MergedCell': 
+        ws.cell(row=type_acc_row+1, column=8).value = None
+    if type(ws.cell(row=type_acc_row+2, column=8)).__name__ != 'MergedCell': 
+        ws.cell(row=type_acc_row+2, column=8).value = None
+    
+    ws.cell(row=type_acc_row, column=8).value = total_days_final
+    
+    if type(ws.cell(row=total_row, column=8)).__name__ != 'MergedCell':
+        ws.cell(row=total_row, column=8).value = f"=SUM(H{type_acc_row}:H{total_row-1})"
         
     remarks_to_print_178 = []
     month_abbr = ind_vars.get("val_6", "")
@@ -1577,13 +1596,14 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                             shrink_to_fit=True
                         )
 
-    # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ (เผื่อผู้ใช้ Insert Row)
+    # 📌 ระบบเรดาร์รุ่นใหม่ล่าสุด (ยึดเลข 1 ในคอลัมน์แรกเป็นหลัก)
     start_row = 8
     for r in range(5, 15):
-        val = str(ws.cell(row=r, column=2).value).replace(" ", "")
-        if "เวลามา" in val or "เวลาปฏิบัติ" in val:
-            start_row = r + 1
+        val1 = str(ws.cell(row=r, column=1).value).strip()
+        if val1 == "1" or val1 == "1.0":
+            start_row = r
             break
+            
     offset = start_row - 8
 
     if type(ws.cell(row=2 + min(offset, 1), column=7)).__name__ != 'MergedCell':
