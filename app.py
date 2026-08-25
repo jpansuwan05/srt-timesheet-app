@@ -302,9 +302,11 @@ if 'employees' not in st.session_state or not st.session_state.employees:
             try:
                 xls = pd.ExcelFile(uploaded_emp_file)
                 
+                # 📌 1. อ่าน Sheet แรก (พนักงานประจำ)
                 df_reg = pd.read_excel(xls, sheet_name=0)
                 emp_dict = parse_employee_dataframe(df_reg, is_regular_worker=True)
                 
+                # 📌 2. อ่าน Sheet ที่ 2 (ฐานข้อมูลผู้แทน) ถ้ามี
                 sub_dict = {}
                 if len(xls.sheet_names) > 1:
                     df_sub = pd.read_excel(xls, sheet_name=1)
@@ -1061,7 +1063,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
-    # 📌 1. ค้นหาว่ามี [1_2] ในไฟล์ฟอร์มหรือยัง (เผื่อบางคนยังไม่ได้เพิ่มบรรทัด)
     has_1_2 = False
     for r in range(1, 15):
         for c in range(1, 40):
@@ -1071,7 +1072,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                 break
         if has_1_2: break
 
-    # 📌 2. หั่นข้อความตำแหน่งอัจฉริยะ (ถ้ามีคำว่า 'ทำหน้าที่' หรือยาวเกินไป)
     pos_full = str(emp_info.get("ตำแหน่ง", "-"))
     pos1, pos2 = pos_full, ""
     if has_1_2:
@@ -1111,7 +1111,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # หากไม่มีการขึ้นบรรทัดใหม่ ให้เปิด shrink_to_fit เผื่อไว้
                     if "[1]" in val or "[NAME]" in val or "[1_2]" in val:
                         al = c_cell.alignment
                         c_cell.alignment = Alignment(
@@ -1121,15 +1120,15 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                             shrink_to_fit=True
                         )
                 
-    # 📌 3. ระบบเรดาร์ค้นหา "หัวตาราง" อัตโนมัติ (Dynamic Rows)
+    # 📌 3. ระบบเรดาร์ค้นหา "หัวตาราง" อัตโนมัติ (Dynamic Rows) แบบข้ามหัวกระดาษ
     start_row = 7
-    for r in range(3, 15):
-        val = str(ws.cell(row=r, column=2).value).replace(" ", "")
-        if "ลักษณะงาน" in val or "สถานที่" in val:
+    for r in range(5, 15): # เริ่มหาที่บรรทัด 5 ป้องกันเจอข้อความบนหัวกระดาษ
+        val1 = str(ws.cell(row=r, column=1).value).replace(" ", "")
+        val2 = str(ws.cell(row=r, column=2).value).replace(" ", "")
+        if "ลักษณะงาน" in val2 or "สถานที่" in val2 or "วันที่" in val1:
             start_row = r + 1
             break
             
-    # คำนวณความคลาดเคลื่อน (หากมีการแทรกแถว)
     offset = start_row - 7 
     
     rate_val = float(emp_info.get("เรท", 0.0))
@@ -1206,7 +1205,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     
     baht_text_str = get_thai_baht_text(grand_total_money)
 
-    # ค้นหาบรรทัด "รวม" แบบอัตโนมัติ ไม่สนว่าจะเลื่อนไปไกลแค่ไหน
     for r in range(35, 65):
         cell_v1 = str(ws.cell(row=r, column=1).value).strip()
         cell_v2 = str(ws.cell(row=r, column=2).value).strip()
@@ -1244,7 +1242,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         if ref:
             remarks_to_print_177.append(ref)
             
-    remark_row_start = 21 + offset # ขยับตามถ้ามีการแทรกแถว
+    remark_row_start = 21 + offset 
     remark_col = 8
     for c in [8, 9, 10, 11, 12]:
         found = False
@@ -1285,7 +1283,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
-    # 📌 ค้นหาและเตรียมพื้นที่ให้ตำแหน่งครึ่งหลัง
     has_1_2 = False
     for r in range(1, 15):
         for c in range(1, 40):
@@ -1350,11 +1347,12 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
     daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
     
-    # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ 
+    # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ (แบบข้ามหัวกระดาษ ป้องกัน Error)
     start_row = 7
-    for r in range(3, 15):
-        val = str(ws.cell(row=r, column=2).value).replace(" ", "")
-        if "ชื่อวันหยุด" in val or "วันหยุด" in val:
+    for r in range(5, 15):
+        val1 = str(ws.cell(row=r, column=1).value).replace(" ", "")
+        val2 = str(ws.cell(row=r, column=2).value).replace(" ", "")
+        if "ชื่อวันหยุด" in val2 or "วันที่" in val1:
             start_row = r
             break
     offset = start_row - 7
@@ -1396,7 +1394,10 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if day > num_days:
             continue 
             
-        ws.cell(row=row, column=1).value = str(day) 
+        # 📌 ป้องกันการเขียนทับเซลล์ที่ผสานไว้ (เกราะกัน Error AttributeError)
+        c_day = ws.cell(row=row, column=1)
+        if type(c_day).__name__ != 'MergedCell':
+            c_day.value = str(day) 
             
         shift_raw = str(roster_data.get(str(day), "")).strip()
         if "(" in shift_raw: is_in_weekly_period = True
@@ -1421,28 +1422,29 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 elif shift_clean == "00-24": t1_start, t1_end = "00.00", "24.00"
                 else: t1_start, t1_end = shift_clean, ""
                 
-                ws.cell(row=row, column=3).value = emp_info["ตำแหน่ง"]
-                
-                # ป้องกันชื่อตำแหน่งล้นช่องในตารางรายวัน
-                c_cell_pos = ws.cell(row=row, column=3)
-                al_pos = c_cell_pos.alignment
-                c_cell_pos.alignment = Alignment(horizontal=al_pos.horizontal if al_pos else 'center', vertical=al_pos.vertical if al_pos else 'center', wrap_text=False, shrink_to_fit=True)
+                c_pos = ws.cell(row=row, column=3)
+                if type(c_pos).__name__ != 'MergedCell':
+                    c_pos.value = emp_info["ตำแหน่ง"]
+                    al_pos = c_pos.alignment
+                    c_pos.alignment = Alignment(horizontal=al_pos.horizontal if al_pos else 'center', vertical=al_pos.vertical if al_pos else 'center', wrap_text=False, shrink_to_fit=True)
 
-                if t1_start: ws.cell(row=row, column=4).value = t1_start
-                if t1_end: ws.cell(row=row, column=5).value = t1_end
-                if t2_start: ws.cell(row=row, column=6).value = t2_start
-                if t2_end: ws.cell(row=row, column=7).value = t2_end
-                ws.cell(row=row, column=8).value = 1 
+                if t1_start and type(ws.cell(row=row, column=4)).__name__ != 'MergedCell': ws.cell(row=row, column=4).value = t1_start
+                if t1_end and type(ws.cell(row=row, column=5)).__name__ != 'MergedCell': ws.cell(row=row, column=5).value = t1_end
+                if t2_start and type(ws.cell(row=row, column=6)).__name__ != 'MergedCell': ws.cell(row=row, column=6).value = t2_start
+                if t2_end and type(ws.cell(row=row, column=7)).__name__ != 'MergedCell': ws.cell(row=row, column=7).value = t2_end
+                if type(ws.cell(row=row, column=8)).__name__ != 'MergedCell': ws.cell(row=row, column=8).value = 1 
                 
-                ws.cell(row=row, column=10).value = daily_rate 
+                if type(ws.cell(row=row, column=10)).__name__ != 'MergedCell': ws.cell(row=row, column=10).value = daily_rate 
                 
                 if is_public:
                     h_name = ph_dict_local.get(str(day), "วันหยุดนักขัตฤกษ์")
                     if not h_name.strip(): h_name = "วันหยุดนักขัตฤกษ์"
-                    ws.cell(row=row, column=2).value = f"({h_name})"
+                    c_name2 = ws.cell(row=row, column=2)
+                    if type(c_name2).__name__ != 'MergedCell': c_name2.value = f"({h_name})"
                     public_holiday_count += 1
                 elif is_weekly:
-                    ws.cell(row=row, column=2).value = "(วันหยุดประจำสัปดาห์)"
+                    c_name2 = ws.cell(row=row, column=2)
+                    if type(c_name2).__name__ != 'MergedCell': c_name2.value = "(วันหยุดประจำสัปดาห์)"
                     weekly_holiday_count += 1
                     
         if ")" in shift_raw: is_in_weekly_period = False
@@ -1518,7 +1520,6 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     except: return None
     ws = wb.active
     
-    # 📌 ค้นหาและเตรียมพื้นที่ให้ตำแหน่งครึ่งหลัง
     has_1_2 = False
     for r in range(1, 15):
         for c in range(1, 40):
@@ -1578,7 +1579,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 
     # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ (เผื่อผู้ใช้ Insert Row)
     start_row = 8
-    for r in range(3, 15):
+    for r in range(5, 15):
         val = str(ws.cell(row=r, column=2).value).replace(" ", "")
         if "เวลามา" in val or "เวลาปฏิบัติ" in val:
             start_row = r + 1
