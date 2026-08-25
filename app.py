@@ -1061,6 +1061,32 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
+    # 📌 1. ค้นหาว่ามี [1_2] ในไฟล์ฟอร์มหรือยัง (เผื่อบางคนยังไม่ได้เพิ่มบรรทัด)
+    has_1_2 = False
+    for r in range(1, 15):
+        for c in range(1, 40):
+            val = ws.cell(row=r, column=c).value
+            if isinstance(val, str) and "[1_2]" in val:
+                has_1_2 = True
+                break
+        if has_1_2: break
+
+    # 📌 2. หั่นข้อความตำแหน่งอัจฉริยะ (ถ้ามีคำว่า 'ทำหน้าที่' หรือยาวเกินไป)
+    pos_full = str(emp_info.get("ตำแหน่ง", "-"))
+    pos1, pos2 = pos_full, ""
+    if has_1_2:
+        if "ทำหน้าที่" in pos_full and len(pos_full) > 15:
+            parts = pos_full.split("ทำหน้าที่", 1)
+            pos1 = parts[0].strip()
+            pos2 = "ทำหน้าที่" + parts[1].strip()
+        elif len(pos_full) > 40:
+            spaces = [m.start() for m in re.finditer(' ', pos_full)]
+            if spaces:
+                middle = len(pos_full) // 2
+                closest_space = min(spaces, key=lambda x: abs(x - middle))
+                pos1 = pos_full[:closest_space].strip()
+                pos2 = pos_full[closest_space:].strip()
+    
     remarks_dict = global_vars.get("remarks_dict", {}) 
     
     replacements = {
@@ -1071,9 +1097,12 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         "[8]": global_vars["val_8"], "[7]": global_vars["val_7"], "[6]": ind_vars.get("val_6", ""),
         "[5]": ind_vars.get("val_5", ""), "[4]": ind_vars.get("val_4", ""),
         "[3]": salary_str,  
-        "[2]": emp_id_str, "[1]": emp_info["ตำแหน่ง"]
+        "[2]": emp_id_str, 
+        "[1]": pos1, 
+        "[1_2]": pos2 
     }
-    for r in range(1, 55):
+    
+    for r in range(1, 60):
         for c in range(1, 40): 
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
@@ -1082,16 +1111,27 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดใช้งาน shrink_to_fit เพื่อบีบข้อความที่ยาวทะลุโลกให้แสดงครบ
-                    al = c_cell.alignment
-                    c_cell.alignment = Alignment(
-                        horizontal=al.horizontal if al else 'center',
-                        vertical=al.vertical if al else 'center',
-                        wrap_text=False,
-                        shrink_to_fit=True
-                    )
+                    # หากไม่มีการขึ้นบรรทัดใหม่ ให้เปิด shrink_to_fit เผื่อไว้
+                    if "[1]" in val or "[NAME]" in val or "[1_2]" in val:
+                        al = c_cell.alignment
+                        c_cell.alignment = Alignment(
+                            horizontal=al.horizontal if al else 'center',
+                            vertical=al.vertical if al else 'center',
+                            wrap_text=False,
+                            shrink_to_fit=True
+                        )
                 
+    # 📌 3. ระบบเรดาร์ค้นหา "หัวตาราง" อัตโนมัติ (Dynamic Rows)
     start_row = 7
+    for r in range(3, 15):
+        val = str(ws.cell(row=r, column=2).value).replace(" ", "")
+        if "ลักษณะงาน" in val or "สถานที่" in val:
+            start_row = r + 1
+            break
+            
+    # คำนวณความคลาดเคลื่อน (หากมีการแทรกแถว)
+    offset = start_row - 7 
+    
     rate_val = float(emp_info.get("เรท", 0.0))
     rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
     rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
@@ -1166,7 +1206,8 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
     
     baht_text_str = get_thai_baht_text(grand_total_money)
 
-    for r in range(37, 45):
+    # ค้นหาบรรทัด "รวม" แบบอัตโนมัติ ไม่สนว่าจะเลื่อนไปไกลแค่ไหน
+    for r in range(35, 65):
         cell_v1 = str(ws.cell(row=r, column=1).value).strip()
         cell_v2 = str(ws.cell(row=r, column=2).value).strip()
         if "รวม" in cell_v1 or "รวม" in cell_v2:
@@ -1203,11 +1244,11 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         if ref:
             remarks_to_print_177.append(ref)
             
-    remark_row_start = 21 
+    remark_row_start = 21 + offset # ขยับตามถ้ามีการแทรกแถว
     remark_col = 8
     for c in [8, 9, 10, 11, 12]:
         found = False
-        for r in range(10, 40):
+        for r in range(10, 50):
             val = ws.cell(row=r, column=c).value
             if val and isinstance(val, str) and "หมายเหตุ" in val.replace(" ", ""):
                 remark_row_start = r
@@ -1244,6 +1285,31 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     except: return None
     ws = wb.active
     
+    # 📌 ค้นหาและเตรียมพื้นที่ให้ตำแหน่งครึ่งหลัง
+    has_1_2 = False
+    for r in range(1, 15):
+        for c in range(1, 40):
+            val = ws.cell(row=r, column=c).value
+            if isinstance(val, str) and "[1_2]" in val:
+                has_1_2 = True
+                break
+        if has_1_2: break
+
+    pos_full = str(emp_info.get("ตำแหน่ง", "-"))
+    pos1, pos2 = pos_full, ""
+    if has_1_2:
+        if "ทำหน้าที่" in pos_full and len(pos_full) > 15:
+            parts = pos_full.split("ทำหน้าที่", 1)
+            pos1 = parts[0].strip()
+            pos2 = "ทำหน้าที่" + parts[1].strip()
+        elif len(pos_full) > 40:
+            spaces = [m.start() for m in re.finditer(' ', pos_full)]
+            if spaces:
+                middle = len(pos_full) // 2
+                closest_space = min(spaces, key=lambda x: abs(x - middle))
+                pos1 = pos_full[:closest_space].strip()
+                pos2 = pos_full[closest_space:].strip()
+                
     ph_dict_local = global_vars.get("public_holidays_dict", {})
     remarks_dict = global_vars.get("remarks_dict", {}) 
     
@@ -1255,10 +1321,12 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         "[11]": ind_vars.get("val_11", ""), "[10]": ind_vars.get("val_10", ""), "[9]": ind_vars.get("val_9", ""),
         "[6]": ind_vars.get("val_6", ""), "[5]": ind_vars.get("val_5", ""), "[4]": ind_vars.get("val_4", ""),
         "[3]": salary_str,  
-        "[2]": emp_id_str, "[1]": emp_info["ตำแหน่ง"]
+        "[2]": emp_id_str, 
+        "[1]": pos1,
+        "[1_2]": pos2
     }
     
-    for r in range(1, 55):
+    for r in range(1, 60):
         for c in range(1, 40): 
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
@@ -1269,23 +1337,31 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                         new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดใช้งาน shrink_to_fit เพื่อบีบข้อความที่ยาวทะลุโลกให้แสดงครบ
-                    al = c_cell.alignment
-                    c_cell.alignment = Alignment(
-                        horizontal=al.horizontal if al else 'center',
-                        vertical=al.vertical if al else 'center',
-                        wrap_text=False,
-                        shrink_to_fit=True
-                    )
+                    if "[1]" in val or "[NAME]" in val or "[1_2]" in val:
+                        al = c_cell.alignment
+                        c_cell.alignment = Alignment(
+                            horizontal=al.horizontal if al else 'center',
+                            vertical=al.vertical if al else 'center',
+                            wrap_text=False,
+                            shrink_to_fit=True
+                        )
 
     rate_val = float(emp_info.get("เรท", 0.0))
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
     daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
     
-    if type(ws.cell(row=3, column=12)).__name__ != 'MergedCell': ws.cell(row=3, column=12).value = rate_val
-    if type(ws.cell(row=5, column=12)).__name__ != 'MergedCell': ws.cell(row=5, column=12).value = daily_rate
-        
+    # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ 
     start_row = 7
+    for r in range(3, 15):
+        val = str(ws.cell(row=r, column=2).value).replace(" ", "")
+        if "ชื่อวันหยุด" in val or "วันหยุด" in val:
+            start_row = r
+            break
+    offset = start_row - 7
+    
+    if type(ws.cell(row=3 + offset, column=12)).__name__ != 'MergedCell': ws.cell(row=3 + offset, column=12).value = rate_val
+    if type(ws.cell(row=5 + offset, column=12)).__name__ != 'MergedCell': ws.cell(row=5 + offset, column=12).value = daily_rate
+        
     weekly_holiday_count = 0
     public_holiday_count = 0
     is_in_weekly_period = False
@@ -1346,7 +1422,8 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 else: t1_start, t1_end = shift_clean, ""
                 
                 ws.cell(row=row, column=3).value = emp_info["ตำแหน่ง"]
-                # 📌 เปิดโหมดย่อขนาดให้อัตโนมัติ ป้องกันชื่อตำแหน่งล้นช่องในตารางรายวัน
+                
+                # ป้องกันชื่อตำแหน่งล้นช่องในตารางรายวัน
                 c_cell_pos = ws.cell(row=row, column=3)
                 al_pos = c_cell_pos.alignment
                 c_cell_pos.alignment = Alignment(horizontal=al_pos.horizontal if al_pos else 'center', vertical=al_pos.vertical if al_pos else 'center', wrap_text=False, shrink_to_fit=True)
@@ -1370,14 +1447,14 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                     
         if ")" in shift_raw: is_in_weekly_period = False
                     
-    if type(ws.cell(row=39, column=8)).__name__ != 'MergedCell': ws.cell(row=39, column=8).value = None
-    if type(ws.cell(row=40, column=8)).__name__ != 'MergedCell': ws.cell(row=40, column=8).value = None
+    if type(ws.cell(row=39 + offset, column=8)).__name__ != 'MergedCell': ws.cell(row=39 + offset, column=8).value = None
+    if type(ws.cell(row=40 + offset, column=8)).__name__ != 'MergedCell': ws.cell(row=40 + offset, column=8).value = None
     
     total_days_final = weekly_holiday_count + public_holiday_count
-    ws.cell(row=39, column=8).value = total_days_final
+    ws.cell(row=39 + offset, column=8).value = total_days_final
     
-    if type(ws.cell(row=42, column=8)).__name__ != 'MergedCell':
-        ws.cell(row=42, column=8).value = f"=SUM(H39:H41)"
+    if type(ws.cell(row=42 + offset, column=8)).__name__ != 'MergedCell':
+        ws.cell(row=42 + offset, column=8).value = f"=SUM(H{39+offset}:H{41+offset})"
         
     remarks_to_print_178 = []
     month_abbr = ind_vars.get("val_6", "")
@@ -1392,11 +1469,11 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
         if ref:
             remarks_to_print_178.append(ref)
             
-    remark_row_start = 22 
+    remark_row_start = 22 + offset
     remark_col = 11
     for c in [8, 9, 10, 11, 12]:
         found = False
-        for r in range(10, 40):
+        for r in range(10, 50):
             val = ws.cell(row=r, column=c).value
             if val and isinstance(val, str) and "หมายเหตุ" in val.replace(" ", ""):
                 remark_row_start = r
@@ -1441,11 +1518,35 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     except: return None
     ws = wb.active
     
+    # 📌 ค้นหาและเตรียมพื้นที่ให้ตำแหน่งครึ่งหลัง
+    has_1_2 = False
+    for r in range(1, 15):
+        for c in range(1, 40):
+            val = ws.cell(row=r, column=c).value
+            if isinstance(val, str) and "[1_2]" in val:
+                has_1_2 = True
+                break
+        if has_1_2: break
+
+    pos_full = str(emp_info.get("ตำแหน่ง", "-"))
+    pos1, pos2 = pos_full, ""
+    if has_1_2:
+        if "ทำหน้าที่" in pos_full and len(pos_full) > 15:
+            parts = pos_full.split("ทำหน้าที่", 1)
+            pos1 = parts[0].strip()
+            pos2 = "ทำหน้าที่" + parts[1].strip()
+        elif len(pos_full) > 40:
+            spaces = [m.start() for m in re.finditer(' ', pos_full)]
+            if spaces:
+                middle = len(pos_full) // 2
+                closest_space = min(spaces, key=lambda x: abs(x - middle))
+                pos1 = pos_full[:closest_space].strip()
+                pos2 = pos_full[closest_space:].strip()
+    
     remarks_dict = global_vars.get("remarks_dict", {}) 
 
     replacements = {
         "[NAME]": emp_info["ชื่อ-สกุล"],
-        "[1]": emp_info["ตำแหน่ง"],
         "[2]": emp_id_str,
         "[3]": salary_str,
         "[14]": global_vars["val_14"],
@@ -1453,9 +1554,11 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
         "[8]": global_vars["val_8"], 
         "[7]": global_vars["val_7"],
         "[17]": ind_vars.get("val_17", ""), 
+        "[1]": pos1,
+        "[1_2]": pos2
     }
 
-    for r in range(1, 55):
+    for r in range(1, 60):
         for c in range(1, 40):
             c_cell = ws.cell(row=r, column=c)
             val = c_cell.value
@@ -1464,21 +1567,29 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดใช้งาน shrink_to_fit เพื่อบีบข้อความที่ยาวทะลุโลกให้แสดงครบ
-                    al = c_cell.alignment
-                    c_cell.alignment = Alignment(
-                        horizontal=al.horizontal if al else 'center',
-                        vertical=al.vertical if al else 'center',
-                        wrap_text=False,
-                        shrink_to_fit=True
-                    )
+                    if "[1]" in val or "[NAME]" in val or "[1_2]" in val:
+                        al = c_cell.alignment
+                        c_cell.alignment = Alignment(
+                            horizontal=al.horizontal if al else 'center',
+                            vertical=al.vertical if al else 'center',
+                            wrap_text=False,
+                            shrink_to_fit=True
+                        )
 
-    if type(ws.cell(row=2, column=7)).__name__ != 'MergedCell':
-        ws.cell(row=2, column=7).value = global_vars["val_13"]
-    if type(ws.cell(row=44, column=2)).__name__ != 'MergedCell':
-        ws.cell(row=44, column=2).value = emp_info["ชื่อ-สกุล"]
-
+    # 📌 หาบรรทัดเริ่มต้นอัจฉริยะ (เผื่อผู้ใช้ Insert Row)
     start_row = 8
+    for r in range(3, 15):
+        val = str(ws.cell(row=r, column=2).value).replace(" ", "")
+        if "เวลามา" in val or "เวลาปฏิบัติ" in val:
+            start_row = r + 1
+            break
+    offset = start_row - 8
+
+    if type(ws.cell(row=2 + min(offset, 1), column=7)).__name__ != 'MergedCell':
+        ws.cell(row=2 + min(offset, 1), column=7).value = global_vars["val_13"]
+    if type(ws.cell(row=44 + offset, column=2)).__name__ != 'MergedCell':
+        ws.cell(row=44 + offset, column=2).value = emp_info["ชื่อ-สกุล"]
+
     thin_border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
