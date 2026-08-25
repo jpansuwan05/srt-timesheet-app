@@ -302,11 +302,9 @@ if 'employees' not in st.session_state or not st.session_state.employees:
             try:
                 xls = pd.ExcelFile(uploaded_emp_file)
                 
-                # 📌 1. อ่าน Sheet แรก (พนักงานประจำ)
                 df_reg = pd.read_excel(xls, sheet_name=0)
                 emp_dict = parse_employee_dataframe(df_reg, is_regular_worker=True)
                 
-                # 📌 2. อ่าน Sheet ที่ 2 (ฐานข้อมูลผู้แทน) ถ้ามี
                 sub_dict = {}
                 if len(xls.sheet_names) > 1:
                     df_sub = pd.read_excel(xls, sheet_name=1)
@@ -998,15 +996,13 @@ def generate_109(global_vars, roster_df, num_days, first_weekday):
             
             c_name = ws.cell(row=current_excel_row, column=2)
             c_name.value = str(row_data['ชื่อ-สกุล']).strip()
-            # 📌 ปิดโหมดปัดบรรทัด เพื่อป้องกันตารางเสียทรง
             al = c_name.alignment
-            c_name.alignment = Alignment(horizontal=al.horizontal if al else 'left', vertical=al.vertical if al else 'center', wrap_text=False)
+            c_name.alignment = Alignment(horizontal=al.horizontal if al else 'left', vertical=al.vertical if al else 'center', wrap_text=False, shrink_to_fit=True)
             
             c_pos = ws.cell(row=current_excel_row+1, column=2)
             c_pos.value = str(row_data['ตำแหน่งเบิก']).strip()
-            # 📌 ปิดโหมดปัดบรรทัด เพื่อป้องกันตารางเสียทรง
             al2 = c_pos.alignment
-            c_pos.alignment = Alignment(horizontal=al2.horizontal if al2 else 'left', vertical=al2.vertical if al2 else 'center', wrap_text=False)
+            c_pos.alignment = Alignment(horizontal=al2.horizontal if al2 else 'left', vertical=al2.vertical if al2 else 'center', wrap_text=False, shrink_to_fit=True)
             
             role_val = str(row_data.get('Role (หน้าที่)', '')).strip()
             
@@ -1086,18 +1082,16 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดใช้งาน wrap_text=False ป้องกันการตกบรรทัดใหม่
-                    if "[1]" in val or "[NAME]" in val:
-                        al = c_cell.alignment
-                        c_cell.alignment = Alignment(
-                            horizontal=al.horizontal if al else 'center',
-                            vertical=al.vertical if al else 'center',
-                            wrap_text=False
-                        )
+                    # 📌 เปิดใช้งาน shrink_to_fit เพื่อบีบข้อความที่ยาวทะลุโลกให้แสดงครบ
+                    al = c_cell.alignment
+                    c_cell.alignment = Alignment(
+                        horizontal=al.horizontal if al else 'center',
+                        vertical=al.vertical if al else 'center',
+                        wrap_text=False,
+                        shrink_to_fit=True
+                    )
                 
-    # 📌 เติมบรรทัดนี้กลับมาแล้วครับ ขออภัยที่ทำตกหล่นไป
-    start_row = 7 
-    
+    start_row = 7
     rate_val = float(emp_info.get("เรท", 0.0))
     rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
     rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
@@ -1275,14 +1269,14 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                         new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดใช้งาน wrap_text=False (ยกเลิก shrink_to_fit เพื่อไม่ให้ฟอนต์เล็ก)
-                    if "[1]" in val or "[NAME]" in val:
-                        al = c_cell.alignment
-                        c_cell.alignment = Alignment(
-                            horizontal=al.horizontal if al else 'center',
-                            vertical=al.vertical if al else 'center',
-                            wrap_text=False
-                        )
+                    # 📌 เปิดใช้งาน shrink_to_fit เพื่อบีบข้อความที่ยาวทะลุโลกให้แสดงครบ
+                    al = c_cell.alignment
+                    c_cell.alignment = Alignment(
+                        horizontal=al.horizontal if al else 'center',
+                        vertical=al.vertical if al else 'center',
+                        wrap_text=False,
+                        shrink_to_fit=True
+                    )
 
     rate_val = float(emp_info.get("เรท", 0.0))
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
@@ -1352,6 +1346,11 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                 else: t1_start, t1_end = shift_clean, ""
                 
                 ws.cell(row=row, column=3).value = emp_info["ตำแหน่ง"]
+                # 📌 เปิดโหมดย่อขนาดให้อัตโนมัติ ป้องกันชื่อตำแหน่งล้นช่องในตารางรายวัน
+                c_cell_pos = ws.cell(row=row, column=3)
+                al_pos = c_cell_pos.alignment
+                c_cell_pos.alignment = Alignment(horizontal=al_pos.horizontal if al_pos else 'center', vertical=al_pos.vertical if al_pos else 'center', wrap_text=False, shrink_to_fit=True)
+
                 if t1_start: ws.cell(row=row, column=4).value = t1_start
                 if t1_end: ws.cell(row=row, column=5).value = t1_end
                 if t2_start: ws.cell(row=row, column=6).value = t2_start
@@ -1465,14 +1464,14 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                 for k, v in replacements.items(): new_val = new_val.replace(k, str(v))
                 if type(c_cell).__name__ != 'MergedCell': 
                     c_cell.value = new_val
-                    # 📌 เปิดใช้งาน wrap_text=False (ยกเลิก shrink_to_fit เพื่อไม่ให้ฟอนต์เล็ก)
-                    if "[1]" in val or "[NAME]" in val:
-                        al = c_cell.alignment
-                        c_cell.alignment = Alignment(
-                            horizontal=al.horizontal if al else 'center',
-                            vertical=al.vertical if al else 'center',
-                            wrap_text=False
-                        )
+                    # 📌 เปิดใช้งาน shrink_to_fit เพื่อบีบข้อความที่ยาวทะลุโลกให้แสดงครบ
+                    al = c_cell.alignment
+                    c_cell.alignment = Alignment(
+                        horizontal=al.horizontal if al else 'center',
+                        vertical=al.vertical if al else 'center',
+                        wrap_text=False,
+                        shrink_to_fit=True
+                    )
 
     if type(ws.cell(row=2, column=7)).__name__ != 'MergedCell':
         ws.cell(row=2, column=7).value = global_vars["val_13"]
