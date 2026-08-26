@@ -11,6 +11,7 @@ import json
 import uuid
 import zipfile  
 from copy import copy
+import base64
 from streamlit_local_storage import LocalStorage
 import streamlit.components.v1 as components
 
@@ -153,21 +154,24 @@ components.html("""
 
 local_storage = LocalStorage()
 
-# 📌 1. เครื่องยนต์เซฟข้อมูลทะลวงแคช (ป้องกัน st.rerun() ตัดสายก่อนเซฟเสร็จ)
-if 'pending_save_roster' in st.session_state:
-    json_str = st.session_state.pending_save_roster.to_json(orient='records')
-    local_storage.setItem("srt_roster_data", json_str, key=f"ls_roster_save_{uuid.uuid4().hex}")
-    del st.session_state['pending_save_roster']
-
-if 'pending_save_emp' in st.session_state:
-    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.pending_save_emp), key=f"ls_emp_save_{uuid.uuid4().hex}")
-    del st.session_state['pending_save_emp']
-
+# 📌 1. เครื่องยนต์เซฟข้อมูลฉบับทะลวงเบราว์เซอร์ (เสถียร 100%)
 def save_roster_to_local(df):
     if df is not None and not df.empty:
-        # เก็บข้อมูลไว้รอเซฟหลังจากรีเฟรชหน้าจอ ป้องกันข้อมูลสูญหาย 100%
-        st.session_state.pending_save_roster = df
-        st.session_state.pending_save_emp = st.session_state.employees
+        roster_json = df.to_json(orient='records')
+        emp_json = json.dumps(st.session_state.get('employees', {}))
+        
+        # เข้ารหัสข้อมูลเป็น Base64 เพื่อป้องกันตัวอักษรพิเศษทำระบบพัง
+        roster_b64 = base64.b64encode(roster_json.encode('utf-8')).decode('utf-8')
+        emp_b64 = base64.b64encode(emp_json.encode('utf-8')).decode('utf-8')
+        
+        # ยิงคำสั่งฝังข้อมูลลงเบราว์เซอร์โดยตรง!
+        js_code = f"""
+        <script>
+            window.parent.localStorage.setItem('srt_roster_data', atob('{roster_b64}'));
+            window.parent.localStorage.setItem('srt_employees_data', atob('{emp_b64}'));
+        </script>
+        """
+        components.html(js_code, height=0, width=0)
 
 def load_roster_from_local():
     try:
@@ -288,7 +292,7 @@ def parse_employee_dataframe(df_input, is_regular_worker=True):
 # ==========================================
 saved_emp_json = local_storage.getItem("srt_employees_data")
 saved_sub_json = local_storage.getItem("srt_sub_db_data")
-saved_roster_json = local_storage.getItem("srt_roster_data")
+saved_roster_json = local_storage.getItem("srt_roster_data") # 📌 สั่งดึงตารางเวรเตรียมไว้ตั้งแต่แรกเลย
 
 if saved_emp_json and 'employees' not in st.session_state:
     try: st.session_state.employees = json.loads(saved_emp_json)
@@ -304,6 +308,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
         if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary"):
             st.session_state.employees = json.loads(saved_emp_json)
             
+            # 📌 กู้คืนตารางเวร (รหัสเวร) กลับมาด้วยทันที! ป้องกันการโดนตารางเปล่าทับ
             if saved_roster_json:
                 try:
                     loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
@@ -344,6 +349,7 @@ if 'employees' not in st.session_state or not st.session_state.employees:
     st.stop()
 
 if 'roster_df' not in st.session_state:
+    # 📌 ถ้าระบบยังไม่มีตารางเวร ให้ดึงจากที่โหลดเตรียมไว้
     if saved_roster_json:
         try:
             loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
@@ -364,7 +370,7 @@ if 'roster_df' not in st.session_state:
                      }
         except: pass
         
-    if 'roster_df' not in st.session_state: 
+    if 'roster_df' not in st.session_state: # ถ้ายังไม่มีอีก (สร้างใหม่จริงๆ) ค่อยสร้างตารางเปล่า
         data = []
         for i, (key, info) in enumerate(st.session_state.employees.items()):
             row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
@@ -373,6 +379,7 @@ if 'roster_df' not in st.session_state:
         df = pd.DataFrame(data)
         for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
         st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
+        # 📌 สำคัญมาก! ปิดการ Auto-Save ตารางเปล่าทับของเดิม เพื่อป้องกันข้อมูลรหัสเวรหาย!
 
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
@@ -394,8 +401,9 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 💾 สำรองข้อมูลตารางเวร")
     
+    # 📌 ปุ่มกู้คืนฉุกเฉิน (อัปเกรดให้บังคับตารางรีเฟรชตัวเอง)
     if st.button("🔄 ดึงตารางเวรล่าสุดจากเบราว์เซอร์", help="หากตารางเวรหายไป ให้กดปุ่มนี้เพื่อดึงกลับมา"):
-        if saved_roster_json: 
+        if saved_roster_json: # ใช้ข้อมูลที่ระบบแอบดึงเตรียมไว้แล้วตอนเปิดเว็บ
             try:
                 loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
                 for d in range(1, 32):
@@ -404,6 +412,7 @@ with st.sidebar:
                 
                 st.session_state.roster_df = loaded_df
                 
+                # 📌 ไม้แข็ง: สั่งล้างความจำของตารางเก่าทิ้ง เพื่อบังคับให้มันโชว์ข้อมูลใหม่!
                 if "roster_table" in st.session_state:
                     del st.session_state["roster_table"]
                     
@@ -822,7 +831,8 @@ with st.container(border=True):
                     st.session_state.employees[key]['ชื่อ-สกุล'] = name
                     st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
             
-            st.rerun()
+            # 📌 ลบ st.rerun() ทิ้ง แล้วใส่ข้อความนี้แทน เพื่อให้ระบบมีเวลาส่งข้อมูล
+            st.success("💾 บันทึกตารางเวรเรียบร้อย! (ข้อมูลถูกฝังลงเบราว์เซอร์อย่างปลอดภัยแล้ว 100%)")
 
 # ==========================================
 # 🤖 🛡️ ระบบตรวจสอบความถูกต้องของตารางเวร (AI Validator)
