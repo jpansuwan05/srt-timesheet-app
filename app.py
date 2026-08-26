@@ -809,6 +809,11 @@ for d in range(1, num_days + 1):
             if is_reg: day_info[r_role]['reg'].append({'name': r_name, 'shift': shift_c})
             else: day_info[r_role]['sub'].append({'name': r_name, 'shift': shift_c})
 
+    # 📌 แก้บั๊กกรณีโหลดไฟล์ Backup แล้วระบบมองทุกคนเป็น "ผู้มาแทน"
+    for r in roles_list:
+        if not day_info[r]['reg'] and day_info[r]['sub']:
+            day_info[r]['reg'].append(day_info[r]['sub'].pop(0))
+
     nsn_allowed = ["ว", "ค", "ค/ว", "ว/ค", "00-12", "12-24", "00-24", "0-12"]
     for p in day_info['นสน.']['reg'] + day_info['นสน.']['sub']:
         if p['shift'] not in leave_types and p['shift'] not in nsn_allowed:
@@ -817,7 +822,7 @@ for d in range(1, num_days + 1):
     reg_nsn_shift = day_info['นสน.']['reg'][0]['shift'] if day_info['นสน.']['reg'] else ""
     for p in day_info['นสน.']['sub']:
         if p['shift'] not in leave_types:
-            if reg_nsn_shift not in ["ย", "ย.", "พ", "พ.", "ป", "ป.", "ก", "ก.", "ล", "ลา", "น", "อ"]:
+            if reg_nsn_shift not in leave_types and reg_nsn_shift != "":
                 validator_errors.append(f"วันที่ {d}: {p['name']} (มาแทน นสน.) เข้าเวรไม่ได้ เพราะนายสถานีตัวจริงไม่ได้ลา (ตัวจริงลง '{reg_nsn_shift}')")
                 
     def get_active(role_str):
@@ -843,39 +848,6 @@ for d in range(1, num_days + 1):
                     validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ว/ค' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ค/ว')")
                 elif s1 == "ค/ว" and s2 != "ว/ค":
                     validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค/ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว/ค')")
-
-    for role in roles_list:
-        if role == 'นสน.': continue
-        for r in day_info[role]['reg']:
-            for s in day_info[role]['sub']:
-                if r['shift'] not in leave_types and s['shift'] not in leave_types:
-                    if r['shift'] == s['shift']:
-                        validator_errors.append(f"วันที่ {d}: {s['name']} ลงเวร '{s['shift']}' ซ้ำกับตัวจริง {r['name']} ในตำแหน่ง {role}")
-                    validator_errors.append(f"วันที่ {d}: {p['name']} (มาแทน นสน.) เข้าเวรไม่ได้ เพราะนายสถานีตัวจริงไม่ได้ลา (ตัวจริงลง '{reg_nsn_shift}')")
-                    
-        def get_active(role_str):
-            return [x for x in (day_info[role_str]['reg'] + day_info[role_str]['sub']) if x['shift'] not in leave_types]
-            
-        active_ch1 = get_active('ช.นสน.1')
-        active_ch2 = get_active('ช.นสน.2')
-        
-        # 📌 ปลดล็อกกฎ: ถ้า นสน. ลาหยุด หรือไม่ได้ลงเวรปกติ อนุญาตให้ ช.นสน.1 และ ช.นสน.2 เข้าเวรซ้อนกันในช่วงเช้าได้
-        is_nsn_absent = (reg_nsn_shift in leave_types) or (not reg_nsn_shift)
-        
-        if not is_nsn_absent:
-            for p1 in active_ch1:
-                for p2 in active_ch2:
-                    s1, s2 = p1['shift'], p2['shift']
-                    if s1 == s2:
-                        validator_errors.append(f"วันที่ {d}: {p1['name']} ({s1}) และ {p2['name']} ({s2}) เข้าเวรซ้ำกัน")
-                    elif s1 == "ว" and s2 != "ค":
-                        validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ค')")
-                    elif s1 == "ค" and s2 != "ว":
-                        validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว')")
-                    elif s1 == "ว/ค" and s2 != "ค/ว":
-                        validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ว/ค' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ค/ว')")
-                    elif s1 == "ค/ว" and s2 != "ว/ค":
-                        validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค/ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว/ค')")
 
     for role in roles_list:
         if role == 'นสน.': continue
