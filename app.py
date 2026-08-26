@@ -1966,14 +1966,17 @@ with st.container(border=True):
                                 "val_6": batch_val_6
                             }
                             
+                            # 📌 สร้างชื่อโฟลเดอร์และชื่อไฟล์ตามรูปแบบ "ชื่อ ส.ค.69" อัตโนมัติ
+                            folder_name = f"{sel_name} {batch_val_6}"
+                            
                             excel_177 = generate_177(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
-                            if excel_177: zip_file.writestr(f"ใบเบิก_177/177_{sel_name}.xlsx", excel_177.getvalue())
+                            if excel_177: zip_file.writestr(f"{folder_name}/177 {batch_val_6}.xlsx", excel_177.getvalue())
                             
                             excel_178 = generate_178(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
-                            if excel_178: zip_file.writestr(f"ใบเบิก_178/178_{sel_name}.xlsx", excel_178.getvalue())
+                            if excel_178: zip_file.writestr(f"{folder_name}/178 {batch_val_6}.xlsx", excel_178.getvalue())
                             
                             excel_work = generate_report_work(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
-                            if excel_work: zip_file.writestr(f"รายงานปฏิบัติงาน/รายงาน_{sel_name}.xlsx", excel_work.getvalue())
+                            if excel_work: zip_file.writestr(f"{folder_name}/รายงานปฏิบัติงาน {batch_val_6}.xlsx", excel_work.getvalue())
                             
                     st.session_state["batch_zip_export"] = zip_buffer.getvalue()
                     
