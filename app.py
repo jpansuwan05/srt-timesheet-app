@@ -153,10 +153,21 @@ components.html("""
 
 local_storage = LocalStorage()
 
+# 📌 1. เครื่องยนต์เซฟข้อมูลทะลวงแคช (ป้องกัน st.rerun() ตัดสายก่อนเซฟเสร็จ)
+if 'pending_save_roster' in st.session_state:
+    json_str = st.session_state.pending_save_roster.to_json(orient='records')
+    local_storage.setItem("srt_roster_data", json_str, key=f"ls_roster_save_{uuid.uuid4().hex}")
+    del st.session_state['pending_save_roster']
+
+if 'pending_save_emp' in st.session_state:
+    local_storage.setItem("srt_employees_data", json.dumps(st.session_state.pending_save_emp), key=f"ls_emp_save_{uuid.uuid4().hex}")
+    del st.session_state['pending_save_emp']
+
 def save_roster_to_local(df):
     if df is not None and not df.empty:
-        json_str = df.to_json(orient='records')
-        local_storage.setItem("srt_roster_data", json_str, key=f"ls_roster_{uuid.uuid4().hex}")
+        # เก็บข้อมูลไว้รอเซฟหลังจากรีเฟรชหน้าจอ ป้องกันข้อมูลสูญหาย 100%
+        st.session_state.pending_save_roster = df
+        st.session_state.pending_save_emp = st.session_state.employees
 
 def load_roster_from_local():
     try:
