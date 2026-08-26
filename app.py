@@ -849,14 +849,9 @@ for d in range(1, num_days + 1):
                 elif s1 == "ค/ว" and s2 != "ว/ค":
                     validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค/ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว/ค')")
 
-    for role in roles_list:
-        if role == 'นสน.': continue
-        for r in day_info[role]['reg']:
-            for s in day_info[role]['sub']:
-                if r['shift'] not in leave_types and s['shift'] not in leave_types:
-                    if r['shift'] == s['shift']:
-                        validator_errors.append(f"วันที่ {d}: {s['name']} ลงเวร '{s['shift']}' ซ้ำกับตัวจริง {r['name']} ในตำแหน่ง {role}")
-                        
+    # 📌 เอาการเช็คกะซ้ำของตำแหน่งอื่นๆ (กั้นถนน, ลูกจ้าง, เสมียน ฯลฯ) ออกไปเลย!
+    # เพื่อเปิดอิสระให้ผู้แทนสารพัดประโยชน์สามารถโยกไปเสียบแทนจุดไหนก็ได้โดยไม่ติด Error แจ้งเตือนมั่วซั่วครับ
+
 if validator_errors:
     st.error(f"พบข้อผิดพลาดในตารางเวรทั้งหมด {len(validator_errors)} จุด (โปรดตรวจสอบและแก้ไขก่อนกดบันทึก)")
     for err in validator_errors:
