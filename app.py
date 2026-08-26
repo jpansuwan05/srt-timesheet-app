@@ -277,7 +277,7 @@ def parse_employee_dataframe(df_input, is_regular_worker=True):
 # ==========================================
 saved_emp_json = local_storage.getItem("srt_employees_data")
 saved_sub_json = local_storage.getItem("srt_sub_db_data")
-saved_roster_json = local_storage.getItem("srt_roster_data") # 📌 สั่งดึงตารางเวรเตรียมไว้ตั้งแต่แรกเลย
+saved_roster_json = local_storage.getItem("srt_roster_data")
 
 if saved_emp_json and 'employees' not in st.session_state:
     try: st.session_state.employees = json.loads(saved_emp_json)
@@ -293,7 +293,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
         if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary"):
             st.session_state.employees = json.loads(saved_emp_json)
             
-            # 📌 กู้คืนตารางเวร (รหัสเวร) กลับมาด้วยทันที! ป้องกันการโดนตารางเปล่าทับ
             if saved_roster_json:
                 try:
                     loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
@@ -334,7 +333,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
     st.stop()
 
 if 'roster_df' not in st.session_state:
-    # 📌 ถ้าระบบยังไม่มีตารางเวร ให้ดึงจากที่โหลดเตรียมไว้
     if saved_roster_json:
         try:
             loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
@@ -355,7 +353,7 @@ if 'roster_df' not in st.session_state:
                      }
         except: pass
         
-    if 'roster_df' not in st.session_state: # ถ้ายังไม่มีอีก (สร้างใหม่จริงๆ) ค่อยสร้างตารางเปล่า
+    if 'roster_df' not in st.session_state: 
         data = []
         for i, (key, info) in enumerate(st.session_state.employees.items()):
             row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
@@ -364,10 +362,10 @@ if 'roster_df' not in st.session_state:
         df = pd.DataFrame(data)
         for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
         st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
-        # 📌 สำคัญมาก! ปิดการ Auto-Save ตารางเปล่าทับของเดิม เพื่อป้องกันข้อมูลรหัสเวรหาย!
 
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
+
 # ==========================================
 # 1. เมนูแถบด้านข้าง (Sidebar)
 # ==========================================
@@ -385,22 +383,25 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 💾 สำรองข้อมูลตารางเวร")
     
-    # 📌 ปุ่มกู้คืนฉุกเฉิน
     if st.button("🔄 ดึงตารางเวรล่าสุดจากเบราว์เซอร์", help="หากตารางเวรหายไป ให้กดปุ่มนี้เพื่อดึงกลับมา"):
-        saved_roster = local_storage.getItem("srt_roster_data")
-        if saved_roster:
+        if saved_roster_json: 
             try:
-                loaded_df = pd.read_json(io.StringIO(saved_roster), orient='records')
+                loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
                 for d in range(1, 32):
                     if str(d) in loaded_df.columns:
                         loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
+                
                 st.session_state.roster_df = loaded_df
-                st.success("✅ กู้คืนข้อมูลตารางเวรสำเร็จ!")
+                
+                if "roster_table" in st.session_state:
+                    del st.session_state["roster_table"]
+                    
                 st.rerun()
             except Exception as e:
                 st.error("เกิดข้อผิดพลาดในการกู้คืน")
         else:
-            st.warning("ไม่พบข้อมูลตารางเวรในเบราว์เซอร์")
+            st.warning("ไม่พบข้อมูลตารางเวรในเบราว์เซอร์ (อาจจะยังไม่เคยบันทึก หรือถูกล้างไปแล้ว)")
+
     if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
@@ -881,9 +882,6 @@ for d in range(1, num_days + 1):
                 elif s1 == "ค/ว" and s2 != "ว/ค":
                     validator_errors.append(f"วันที่ {d}: {p1['name']} ลง 'ค/ว' แต่ {p2['name']} ลง '{s2}' (ต้องคู่กับ 'ว/ค')")
 
-    # 📌 เอาการเช็คกะซ้ำของตำแหน่งอื่นๆ (กั้นถนน, ลูกจ้าง, เสมียน ฯลฯ) ออกไปเลย!
-    # เพื่อเปิดอิสระให้ผู้แทนสารพัดประโยชน์สามารถโยกไปเสียบแทนจุดไหนก็ได้โดยไม่ติด Error แจ้งเตือนมั่วซั่วครับ
-
 if validator_errors:
     st.error(f"พบข้อผิดพลาดในตารางเวรทั้งหมด {len(validator_errors)} จุด (โปรดตรวจสอบและแก้ไขก่อนกดบันทึก)")
     for err in validator_errors:
@@ -1156,7 +1154,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                             shrink_to_fit=True
                         )
                 
-    # 📌 ระบบเรดาร์รุ่นใหม่ล่าสุด (ยึดเลข 1 ในคอลัมน์แรกเป็นหลัก)
+    # 📌 ระบบเรดาร์ 177 ค้นหาเลข 1
     start_row = 7
     for r in range(5, 15): 
         val1 = str(ws.cell(row=r, column=1).value).strip()
@@ -1277,7 +1275,7 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
         if ref:
             remarks_to_print_177.append(ref)
             
-    remark_row_start = 21 + offset
+    remark_row_start = 21 + offset 
     remark_col = 8
     for c in [8, 9, 10, 11, 12]:
         found = False
@@ -1314,8 +1312,13 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     else:
         salary_str = raw_salary
 
-    try: wb = openpyxl.load_workbook("178 อัพเดท.xlsx")
-    except: return None
+    # 📌 อัปเดตให้ดึงไฟล์ "178 อัพเดท.xlsx" เป็นหลัก ถ้าไม่เจอให้ดึง "178 อัพเดท2.xlsx" ครับ
+    try: 
+        wb = openpyxl.load_workbook("178 อัพเดท.xlsx")
+    except: 
+        try:
+            wb = openpyxl.load_workbook("178 อัพเดท2.xlsx")
+        except: return None
     ws = wb.active
     
     has_1_2 = False
@@ -1382,7 +1385,7 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
     daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
     
-    # 📌 ระบบเรดาร์รุ่นใหม่ล่าสุด (ยึดเลข 1 ในคอลัมน์แรกเป็นหลัก)
+    # 📌 ระบบเรดาร์ 178 ค้นหาเลข 1
     start_row = 7
     for r in range(5, 15):
         val1 = str(ws.cell(row=r, column=1).value).strip()
@@ -1485,7 +1488,7 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                     
     total_days_final = weekly_holiday_count + public_holiday_count
     
-    # 📌 การหาบรรทัดยอดรวมอัตโนมัติ ไม่ให้เพี้ยนแน่นอน
+    # 📌 การหาบรรทัดยอดรวม 178 อัตโนมัติ ป้องกันตารางเลื่อน
     type_acc_row = 39 + offset
     total_row = 42 + offset
     
@@ -1632,7 +1635,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                             shrink_to_fit=True
                         )
 
-    # 📌 ระบบเรดาร์รุ่นใหม่ล่าสุด (ยึดเลข 1 ในคอลัมน์แรกเป็นหลัก)
+    # 📌 ระบบเรดาร์รายงานปฏิบัติงาน ค้นหาเลข 1
     start_row = 8
     for r in range(5, 15):
         val1 = str(ws.cell(row=r, column=1).value).strip()
@@ -1829,7 +1832,7 @@ with st.container(border=True):
                         st.success(f"สร้างใบเบิก 178 เสร็จสิ้น!")
                         st.download_button("📥 ดาวน์โหลดไฟล์ 178", data=excel_178, file_name=f"178_{sel_name}.xlsx", use_container_width=True)
                     else:
-                        st.error("ไม่พบไฟล์ '178 อัพเดท.xlsx' ในระบบ (กรุณาอัปโหลดก่อนครับ)")
+                        st.error("ไม่พบไฟล์ '178 อัพเดท.xlsx' หรือ '178 อัพเดท2.xlsx' ในระบบ (กรุณาอัปโหลดก่อนครับ)")
 
             with col_btn3:
                 if st.button(f"🕒 ออกรายงานปฏิบัติงาน", use_container_width=True):
@@ -1878,10 +1881,8 @@ with st.container(border=True):
         
         all_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
         
-        # นำปุ่มเลือกทั้งหมดไว้นอกฟอร์ม เพื่อให้กดปุ๊บทำงานปั๊บ
         select_all = st.checkbox("เลือกพนักงานทั้งหมด", value=True)
         
-        # 📌 สร้าง Form ครอบกล่องเลือกชื่อไว้ เพื่อหยุดอาการหน้าจอกระพริบ
         with st.form("batch_export_form"):
             batch_val_6 = st.text_input("เดือนตัวย่อ [6] (ใช้กับทุกคน)", value=default_val_6, key="batch_v6")
             
@@ -2027,7 +2028,7 @@ with st.container(border=True):
         if "batch_zip_export" in st.session_state:
             st.success("✅ แพ็กไฟล์สำเร็จแล้ว! กดดาวน์โหลดด้านล่างได้เลยครับ")
             st.download_button(
-                "📥 ดาวน์โหลดไฟล์ ZIP (รวมทุกเอกสาร แยกโฟลเดอร์ให้แล้ว)",
+                "📥 ดาวน์โหลดไฟล์ ZIP (รวมทุกเอกสาร แยกแฟ้มรายบุคคลให้แล้ว)",
                 data=st.session_state["batch_zip_export"],
                 file_name=f"เอกสารเบิกเงิน_รฟท_{global_data['val_13']}.zip",
                 mime="application/zip",
