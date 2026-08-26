@@ -1840,110 +1840,119 @@ with st.container(border=True):
             if saved_ind_batch: default_val_6 = json.loads(saved_ind_batch).get("val_6", "ส.ค.69")
         except: pass
         
-        batch_val_6 = st.text_input("เดือนตัวย่อ [6] (ใช้กับทุกคน)", value=default_val_6, key="batch_v6")
-        local_storage.setItem(f"srt_ind_batch", json.dumps({"val_6": batch_val_6}), key=f"ls_batch_{uuid.uuid4().hex}")
-        
         all_emp_options = [f"{r['ชื่อ-สกุล']} ({r['Role (หน้าที่)']})" for _, r in st.session_state.roster_df.iterrows()]
         
+        # นำปุ่มเลือกทั้งหมดไว้นอกฟอร์ม เพื่อให้กดปุ๊บทำงานปั๊บ
         select_all = st.checkbox("เลือกพนักงานทั้งหมด", value=True)
-        if select_all:
-            selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options, default=all_emp_options)
-        else:
-            selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options)
+        
+        # 📌 สร้าง Form ครอบกล่องเลือกชื่อไว้ เพื่อหยุดอาการหน้าจอกระพริบ
+        with st.form("batch_export_form"):
+            batch_val_6 = st.text_input("เดือนตัวย่อ [6] (ใช้กับทุกคน)", value=default_val_6, key="batch_v6")
             
-        with st.expander("🔍 กดเพื่อดูสรุปยอดเงินและชั่วโมงของทุกคน (Preview ก่อนพิมพ์)"):
-            if st.button("📊 คำนวณสรุปยอดทั้งหมด", use_container_width=True):
-                summary_list = []
+            if select_all:
+                selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options, default=all_emp_options)
+            else:
+                selected_batch_emps = st.multiselect("เลือกพนักงานที่ต้องการส่งออก", all_emp_options)
                 
-                # ฟังก์ชันช่วยแปลงข้อความวันหยุด "1-3,5" ให้เป็นตัวเลขเพื่อใช้นับ
-                def parse_holiday_string_to_set_local(day_str):
-                    holiday_set = set()
-                    if not day_str or day_str == "-": return holiday_set
-                    parts = str(day_str).split(",")
-                    for p in parts:
-                        p = p.strip()
-                        if "-" in p:
-                            try:
-                                start, end = p.split("-")
-                                for d in range(int(start), int(end) + 1):
-                                    holiday_set.add(d)
-                            except: pass
-                        elif p.isdigit():
-                            holiday_set.add(int(p))
-                    return holiday_set
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                submit_preview = st.form_submit_button("📊 คำนวณสรุปยอดทั้งหมด", use_container_width=True)
+            with col_btn2:
+                submit_export = st.form_submit_button("📦 สร้างไฟล์ ZIP ส่งออกแบบกลุ่ม", type="primary", use_container_width=True)
 
-                ph_dict_local = global_data.get("public_holidays_dict", {})
+        if submit_preview or submit_export:
+            local_storage.setItem(f"srt_ind_batch", json.dumps({"val_6": batch_val_6}), key=f"ls_batch_{uuid.uuid4().hex}")
 
-                for emp_display in selected_batch_emps:
-                    sel_name = emp_display.split(" (")[0]
-                    sel_role = emp_display.split(" (")[1].replace(")", "")
-                    unique_key = f"{sel_name}_{sel_role}"
-                    emp_info = st.session_state.employees.get(unique_key)
-                    
-                    if not emp_info: continue
-                    
-                    try:
-                        emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
-                    except:
-                        continue
-                    
-                    rate_val = float(emp_info.get("เรท", 0.0))
-                    rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
-                    rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
-                    daily_rate = rate_1d_val if rate_1d_val > 0 else (rate_val * 8)
-                    
-                    # 📌 คำนวณยอด 177
-                    sum_hours_177 = 0
-                    total_money_177 = 0.0
-                    for d in range(1, num_days + 1):
-                        shift_raw = str(emp_row.get(str(d), "")).strip()
-                        shift_clean = shift_raw.replace("(", "").replace(")", "")
-                        sData = shift_data.get(shift_clean)
-                        if sData and sData.get("hours", "-") != "-":
-                            h = int(sData["hours"])
-                            sum_hours_177 += h
-                            if h == 4 and rate_4_val > 0:
-                                total_money_177 += rate_4_val
-                            elif h == 8 and rate_1d_val > 0:
-                                total_money_177 += rate_1d_val
-                            else:
-                                total_money_177 += h * rate_val
-                    
-                    # 📌 คำนวณยอด 178
-                    roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
-                    val_4, val_5, val_17, _, _, _, _ = extract_employee_stats(roster_dict)
-                    
-                    manual_weekly_holidays = parse_holiday_string_to_set_local(val_5)
-                    days_178 = 0
-                    
-                    for d in range(1, num_days + 1):
-                        shift_raw = str(emp_row.get(str(d), "")).strip()
-                        shift_clean = shift_raw.replace("(", "").replace(")", "")
-                        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
-                            is_public = str(d) in ph_dict_local
-                            is_weekly = d in manual_weekly_holidays
-                            if is_public or is_weekly:
-                                days_178 += 1
-                                
-                    total_money_178 = days_178 * daily_rate
-                    grand_total = total_money_177 + total_money_178
-                    
-                    summary_list.append({
-                        "ชื่อ-สกุล": emp_info["ชื่อ-สกุล"],
-                        "ตำแหน่ง": emp_info["Role"],
-                        "รวมชั่วโมง (177)": sum_hours_177,
-                        "รวมเงิน 177": f"{total_money_177:,.2f}",
-                        "จำนวนวัน (178)": days_178,
-                        "รวมเงิน 178": f"{total_money_178:,.2f}",
-                        "💰 รวมรายได้ทั้งหมด": f"{grand_total:,.2f}"
-                    })
-                    
-                if summary_list:
-                    st.dataframe(pd.DataFrame(summary_list), use_container_width=True)
-                else:
-                    st.warning("ไม่มีข้อมูลให้สรุป หรือยังไม่ได้เลือกพนักงานครับ")
+        if submit_preview:
+            summary_list = []
             
-        if st.button("📦 สร้างไฟล์ ZIP ส่งออกแบบกลุ่ม", type="primary", use_container_width=True):
+            def parse_holiday_string_to_set_local(day_str):
+                holiday_set = set()
+                if not day_str or day_str == "-": return holiday_set
+                parts = str(day_str).split(",")
+                for p in parts:
+                    p = p.strip()
+                    if "-" in p:
+                        try:
+                            start, end = p.split("-")
+                            for d in range(int(start), int(end) + 1):
+                                holiday_set.add(d)
+                        except: pass
+                    elif p.isdigit():
+                        holiday_set.add(int(p))
+                return holiday_set
+
+            ph_dict_local = global_data.get("public_holidays_dict", {})
+
+            for emp_display in selected_batch_emps:
+                sel_name = emp_display.split(" (")[0]
+                sel_role = emp_display.split(" (")[1].replace(")", "")
+                unique_key = f"{sel_name}_{sel_role}"
+                emp_info = st.session_state.employees.get(unique_key)
+                
+                if not emp_info: continue
+                
+                try:
+                    emp_row = st.session_state.roster_df[(st.session_state.roster_df['ชื่อ-สกุล'] == sel_name) & (st.session_state.roster_df['Role (หน้าที่)'] == sel_role)].iloc[0]
+                except:
+                    continue
+                
+                rate_val = float(emp_info.get("เรท", 0.0))
+                rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
+                rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
+                daily_rate = rate_1d_val if rate_1d_val > 0 else (rate_val * 8)
+                
+                sum_hours_177 = 0
+                total_money_177 = 0.0
+                for d in range(1, num_days + 1):
+                    shift_raw = str(emp_row.get(str(d), "")).strip()
+                    shift_clean = shift_raw.replace("(", "").replace(")", "")
+                    sData = shift_data.get(shift_clean)
+                    if sData and sData.get("hours", "-") != "-":
+                        h = int(sData["hours"])
+                        sum_hours_177 += h
+                        if h == 4 and rate_4_val > 0:
+                            total_money_177 += rate_4_val
+                        elif h == 8 and rate_1d_val > 0:
+                            total_money_177 += rate_1d_val
+                        else:
+                            total_money_177 += h * rate_val
+                
+                roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
+                val_4, val_5, val_17, _, _, _, _ = extract_employee_stats(roster_dict)
+                
+                manual_weekly_holidays = parse_holiday_string_to_set_local(val_5)
+                days_178 = 0
+                
+                for d in range(1, num_days + 1):
+                    shift_raw = str(emp_row.get(str(d), "")).strip()
+                    shift_clean = shift_raw.replace("(", "").replace(")", "")
+                    if shift_clean and shift_clean not in leave_types and shift_clean != "-":
+                        is_public = str(d) in ph_dict_local
+                        is_weekly = d in manual_weekly_holidays
+                        if is_public or is_weekly:
+                            days_178 += 1
+                            
+                total_money_178 = days_178 * daily_rate
+                grand_total = total_money_177 + total_money_178
+                
+                summary_list.append({
+                    "ชื่อ-สกุล": emp_info["ชื่อ-สกุล"],
+                    "ตำแหน่ง": emp_info["Role"],
+                    "รวมชั่วโมง (177)": sum_hours_177,
+                    "รวมเงิน 177": f"{total_money_177:,.2f}",
+                    "จำนวนวัน (178)": days_178,
+                    "รวมเงิน 178": f"{total_money_178:,.2f}",
+                    "💰 รวมรายได้ทั้งหมด": f"{grand_total:,.2f}"
+                })
+                
+            if summary_list:
+                st.markdown("#### 📊 สรุปยอดเงินและชั่วโมง")
+                st.dataframe(pd.DataFrame(summary_list), use_container_width=True)
+            else:
+                st.warning("ไม่มีข้อมูลให้สรุป หรือยังไม่ได้เลือกพนักงานครับ")
+        
+        if submit_export:
             if not selected_batch_emps:
                 st.warning("กรุณาเลือกพนักงานอย่างน้อย 1 คนครับ")
             else:
@@ -1966,7 +1975,6 @@ with st.container(border=True):
                                 "val_6": batch_val_6
                             }
                             
-                            # 📌 สร้างชื่อโฟลเดอร์และชื่อไฟล์ตามรูปแบบ "ชื่อ ส.ค.69" อัตโนมัติ
                             folder_name = f"{sel_name} {batch_val_6}"
                             
                             excel_177 = generate_177(st.session_state.employees.get(unique_key), roster_dict, global_data, export_ind, num_days)
