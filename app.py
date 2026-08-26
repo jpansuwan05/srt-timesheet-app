@@ -277,6 +277,7 @@ def parse_employee_dataframe(df_input, is_regular_worker=True):
 # ==========================================
 saved_emp_json = local_storage.getItem("srt_employees_data")
 saved_sub_json = local_storage.getItem("srt_sub_db_data")
+saved_roster_json = local_storage.getItem("srt_roster_data") # 📌 สั่งดึงตารางเวรเตรียมไว้ตั้งแต่แรกเลย
 
 if saved_emp_json and 'employees' not in st.session_state:
     try: st.session_state.employees = json.loads(saved_emp_json)
@@ -291,6 +292,17 @@ if 'employees' not in st.session_state or not st.session_state.employees:
         st.info("💡 **ตรวจพบข้อมูลตารางเวรที่คุณทำค้างไว้ในเครื่อง!**")
         if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary"):
             st.session_state.employees = json.loads(saved_emp_json)
+            
+            # 📌 กู้คืนตารางเวร (รหัสเวร) กลับมาด้วยทันที! ป้องกันการโดนตารางเปล่าทับ
+            if saved_roster_json:
+                try:
+                    loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
+                    for d in range(1, 32):
+                        if str(d) in loaded_df.columns:
+                            loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
+                    st.session_state.roster_df = loaded_df
+                except: pass
+                
             st.rerun()
             
     with st.container(border=True):
@@ -301,12 +313,8 @@ if 'employees' not in st.session_state or not st.session_state.employees:
         if uploaded_emp_file is not None:
             try:
                 xls = pd.ExcelFile(uploaded_emp_file)
-                
-                # 📌 1. อ่าน Sheet แรก (พนักงานประจำ)
                 df_reg = pd.read_excel(xls, sheet_name=0)
                 emp_dict = parse_employee_dataframe(df_reg, is_regular_worker=True)
-                
-                # 📌 2. อ่าน Sheet ที่ 2 (ฐานข้อมูลผู้แทน) ถ้ามี
                 sub_dict = {}
                 if len(xls.sheet_names) > 1:
                     df_sub = pd.read_excel(xls, sheet_name=1)
@@ -326,20 +334,28 @@ if 'employees' not in st.session_state or not st.session_state.employees:
     st.stop()
 
 if 'roster_df' not in st.session_state:
-    saved_df = load_roster_from_local()
-    if saved_df is not None:
-        st.session_state.roster_df = saved_df
-        for _, row in saved_df.iterrows():
-            name = str(row['ชื่อ-สกุล']).strip()
-            role = str(row['Role (หน้าที่)']).strip()
-            unique_key = f"{name}_{role}"
-            if unique_key not in st.session_state.employees:
-                 st.session_state.employees[unique_key] = {
-                        "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
-                        "เงินเดือน": "-", "เรท": 0.0, "เรท_4ชม": 0.0, "เรท_1วัน": 0.0,
-                        "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
-                 }
-    else:
+    # 📌 ถ้าระบบยังไม่มีตารางเวร ให้ดึงจากที่โหลดเตรียมไว้
+    if saved_roster_json:
+        try:
+            loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
+            for d in range(1, 32):
+                if str(d) in loaded_df.columns:
+                    loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
+            st.session_state.roster_df = loaded_df
+            
+            for _, row in loaded_df.iterrows():
+                name = str(row['ชื่อ-สกุล']).strip()
+                role = str(row['Role (หน้าที่)']).strip()
+                unique_key = f"{name}_{role}"
+                if unique_key not in st.session_state.employees:
+                     st.session_state.employees[unique_key] = {
+                            "ชื่อ-สกุล": name, "ตำแหน่ง": str(row['ตำแหน่งเบิก']).strip(), "เลขประจำตัว": "-", 
+                            "เงินเดือน": "-", "เรท": 0.0, "เรท_4ชม": 0.0, "เรท_1วัน": 0.0,
+                            "ประเภทบัญชี": "-", "รหัสบัญชี": "-", "รหัสบัญชี2": "-", "กลุ่ม": role, "Role": role, "is_regular": False
+                     }
+        except: pass
+        
+    if 'roster_df' not in st.session_state: # ถ้ายังไม่มีอีก (สร้างใหม่จริงๆ) ค่อยสร้างตารางเปล่า
         data = []
         for i, (key, info) in enumerate(st.session_state.employees.items()):
             row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
@@ -348,11 +364,10 @@ if 'roster_df' not in st.session_state:
         df = pd.DataFrame(data)
         for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
         st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
-        save_roster_to_local(st.session_state.roster_df)
+        # 📌 สำคัญมาก! ปิดการ Auto-Save ตารางเปล่าทับของเดิม เพื่อป้องกันข้อมูลรหัสเวรหาย!
 
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
-
 # ==========================================
 # 1. เมนูแถบด้านข้าง (Sidebar)
 # ==========================================
@@ -369,6 +384,23 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 💾 สำรองข้อมูลตารางเวร")
+    
+    # 📌 ปุ่มกู้คืนฉุกเฉิน
+    if st.button("🔄 ดึงตารางเวรล่าสุดจากเบราว์เซอร์", help="หากตารางเวรหายไป ให้กดปุ่มนี้เพื่อดึงกลับมา"):
+        saved_roster = local_storage.getItem("srt_roster_data")
+        if saved_roster:
+            try:
+                loaded_df = pd.read_json(io.StringIO(saved_roster), orient='records')
+                for d in range(1, 32):
+                    if str(d) in loaded_df.columns:
+                        loaded_df[str(d)] = loaded_df[str(d)].astype(str).replace('nan', '')
+                st.session_state.roster_df = loaded_df
+                st.success("✅ กู้คืนข้อมูลตารางเวรสำเร็จ!")
+                st.rerun()
+            except Exception as e:
+                st.error("เกิดข้อผิดพลาดในการกู้คืน")
+        else:
+            st.warning("ไม่พบข้อมูลตารางเวรในเบราว์เซอร์")
     if 'roster_df' in st.session_state and st.session_state.roster_df is not None:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
