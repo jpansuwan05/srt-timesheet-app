@@ -1854,6 +1854,26 @@ with st.container(border=True):
         with st.expander("🔍 กดเพื่อดูสรุปยอดเงินและชั่วโมงของทุกคน (Preview ก่อนพิมพ์)"):
             if st.button("📊 คำนวณสรุปยอดทั้งหมด", use_container_width=True):
                 summary_list = []
+                
+                # ฟังก์ชันช่วยแปลงข้อความวันหยุด "1-3,5" ให้เป็นตัวเลขเพื่อใช้นับ
+                def parse_holiday_string_to_set_local(day_str):
+                    holiday_set = set()
+                    if not day_str or day_str == "-": return holiday_set
+                    parts = str(day_str).split(",")
+                    for p in parts:
+                        p = p.strip()
+                        if "-" in p:
+                            try:
+                                start, end = p.split("-")
+                                for d in range(int(start), int(end) + 1):
+                                    holiday_set.add(d)
+                            except: pass
+                        elif p.isdigit():
+                            holiday_set.add(int(p))
+                    return holiday_set
+
+                ph_dict_local = global_data.get("public_holidays_dict", {})
+
                 for emp_display in selected_batch_emps:
                     sel_name = emp_display.split(" (")[0]
                     sel_role = emp_display.split(" (")[1].replace(")", "")
@@ -1870,33 +1890,52 @@ with st.container(border=True):
                     rate_val = float(emp_info.get("เรท", 0.0))
                     rate_4_val = float(emp_info.get("เรท_4ชม", 0.0))
                     rate_1d_val = float(emp_info.get("เรท_1วัน", 0.0))
+                    daily_rate = rate_1d_val if rate_1d_val > 0 else (rate_val * 8)
                     
-                    sum_hours = 0
-                    total_money = 0.0
+                    # 📌 คำนวณยอด 177
+                    sum_hours_177 = 0
+                    total_money_177 = 0.0
                     for d in range(1, num_days + 1):
                         shift_raw = str(emp_row.get(str(d), "")).strip()
                         shift_clean = shift_raw.replace("(", "").replace(")", "")
                         sData = shift_data.get(shift_clean)
                         if sData and sData.get("hours", "-") != "-":
                             h = int(sData["hours"])
-                            sum_hours += h
+                            sum_hours_177 += h
                             if h == 4 and rate_4_val > 0:
-                                total_money += rate_4_val
+                                total_money_177 += rate_4_val
                             elif h == 8 and rate_1d_val > 0:
-                                total_money += rate_1d_val
+                                total_money_177 += rate_1d_val
                             else:
-                                total_money += h * rate_val
+                                total_money_177 += h * rate_val
                     
+                    # 📌 คำนวณยอด 178
                     roster_dict = {str(d): str(emp_row[str(d)]) if pd.notna(emp_row[str(d)]) else "" for d in range(1, 32)}
                     val_4, val_5, val_17, _, _, _, _ = extract_employee_stats(roster_dict)
+                    
+                    manual_weekly_holidays = parse_holiday_string_to_set_local(val_5)
+                    days_178 = 0
+                    
+                    for d in range(1, num_days + 1):
+                        shift_raw = str(emp_row.get(str(d), "")).strip()
+                        shift_clean = shift_raw.replace("(", "").replace(")", "")
+                        if shift_clean and shift_clean not in leave_types and shift_clean != "-":
+                            is_public = str(d) in ph_dict_local
+                            is_weekly = d in manual_weekly_holidays
+                            if is_public or is_weekly:
+                                days_178 += 1
+                                
+                    total_money_178 = days_178 * daily_rate
+                    grand_total = total_money_177 + total_money_178
                     
                     summary_list.append({
                         "ชื่อ-สกุล": emp_info["ชื่อ-สกุล"],
                         "ตำแหน่ง": emp_info["Role"],
-                        "รวมชั่วโมง (177)": sum_hours,
-                        "รวมเงิน 177 (บาท)": f"{total_money:,.2f}",
-                        "วันหยุดมาทำ (178)": val_5,
-                        "รวมวันหยุดทั้งเดือน": val_17
+                        "รวมชั่วโมง (177)": sum_hours_177,
+                        "รวมเงิน 177": f"{total_money_177:,.2f}",
+                        "จำนวนวัน (178)": days_178,
+                        "รวมเงิน 178": f"{total_money_178:,.2f}",
+                        "💰 รวมรายได้ทั้งหมด": f"{grand_total:,.2f}"
                     })
                     
                 if summary_list:
