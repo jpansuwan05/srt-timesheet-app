@@ -1822,24 +1822,25 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 
         ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=7)
         c = ws.cell(row=start_row, column=1, value=title_1)
-        c.font = Font(name="TH SarabunPSK", size=18, bold=True)
+        # 📌 อัปเกรดมาใช้ฟอนต์ TH Sarabun New แก้ปัญหาไม้โทหายตอนเซฟ PDF
+        c.font = Font(name="TH Sarabun New", size=18, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
         ws.row_dimensions[start_row].height = 20 
         
         current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
         ws.merge_cells(start_row=start_row+1, start_column=1, end_row=start_row+1, end_column=7)
         c = ws.cell(row=start_row+1, column=1, value=current_title_2)
-        c.font = Font(name="TH SarabunPSK", size=16, bold=True)
+        c.font = Font(name="TH Sarabun New", size=16, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
-        ws.row_dimensions[start_row+1].height = 18 
+        ws.row_dimensions[start_row+1].height = 19 
         
         headers = ["ลำดับ", "ชื่อ - นามสกุล", "เวลาเข้า", "ลงชื่อ", "เวลาออก", "ลงชื่อ", "หมายเหตุ"]
         for col, h in enumerate(headers, 1):
             c = ws.cell(row=start_row+2, column=col, value=h)
-            c.font = Font(name="TH SarabunPSK", size=16, bold=True)
+            c.font = Font(name="TH Sarabun New", size=16, bold=True)
             c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
             c.border = thin_border
-        ws.row_dimensions[start_row+2].height = 18 
+        ws.row_dimensions[start_row+2].height = 19 
             
         curr_row = start_row + 3
         
@@ -1853,29 +1854,27 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 
             for col, val in enumerate(data, 1):
                 c = ws.cell(row=curr_row, column=col, value=val)
-                c.font = Font(name="TH SarabunPSK", size=16)
+                c.font = Font(name="TH Sarabun New", size=16)
                 if col == 2 and val != "":
                     c.alignment = Alignment(horizontal="left", vertical="center", shrink_to_fit=True)
                 else:
                     c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
                 c.border = thin_border
-            ws.row_dimensions[curr_row].height = 18 
+            ws.row_dimensions[curr_row].height = 19 # 📌 เพิ่มความสูงนิดนึงให้สระหายใจออก
             curr_row += 1
             
         start_row = curr_row + 1 
         ws.row_dimensions[curr_row].height = 12 
         
-        # 📌 ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน ให้แม่นยำ
         if d % 4 == 0 and d != num_days:
             ws.row_breaks.append(Break(id=start_row - 1))
 
-    # 📌 ปิดโหมด fitToPage แล้วใช้โหมดลดสเกลเพื่อการันตีว่าเนื้อหาไม่ล้น A4
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = False
     
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-    ws.page_setup.scale = 92 # 📌 บีบสเกลลงเหลือ 92% ป้องกันบรรทัดสุดท้ายหลุดไปหน้าใหม่
+    ws.page_setup.scale = 92 
     
     ws.print_options.horizontalCentered = True 
     ws.page_margins = PageMargins(top=0.3, bottom=0.3, left=0.3, right=0.3, header=0.2, footer=0.2)
