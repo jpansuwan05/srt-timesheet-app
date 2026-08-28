@@ -1760,7 +1760,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     return output
 
 def generate_signin_sheet(roster_df, global_vars, num_days):
-    from openpyxl.worksheet.pagebreak import Break  # นำเข้าตัวสั่งตัดหน้ากระดาษ
+    from openpyxl.worksheet.pagebreak import Break
     
     try: 
         wb = openpyxl.load_workbook("ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx")
@@ -1784,6 +1784,9 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     
     start_row = 1
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    
+    # 📌 ขยายความกว้างคอลัมน์ชื่อให้กว้างขึ้น ตัวอักษรจะได้ไม่ตกหล่นและไม่ต้องบีบแบน
+    ws.column_dimensions['B'].width = 28
     
     def get_times(shift):
         s = shift.strip().replace("(", "").replace(")", "")
@@ -1812,8 +1815,9 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 
         ws.merge_cells(start_row=start_row+1, start_column=1, end_row=start_row+1, end_column=7)
         c = ws.cell(row=start_row+1, column=1, value=title_1)
-        c.font = Font(name="TH SarabunPSK", size=16, bold=True)
+        c.font = Font(name="TH SarabunPSK", size=18, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[start_row+1].height = 25 # 📌 เพิ่มช่องไฟความสูงแถว
         
         current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
         
@@ -1821,6 +1825,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
         c = ws.cell(row=start_row+2, column=1, value=current_title_2)
         c.font = Font(name="TH SarabunPSK", size=16, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[start_row+2].height = 22
         
         headers = ["ลำดับ", "ชื่อ - นามสกุล", "เวลาเข้า", "ลงชื่อ", "เวลาออก", "ลงชื่อ", "หมายเหตุ"]
         for col, h in enumerate(headers, 1):
@@ -1828,6 +1833,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
             c.font = Font(name="TH SarabunPSK", size=16, bold=True)
             c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = thin_border
+        ws.row_dimensions[start_row+4].height = 22
             
         curr_row = start_row + 5
         num_records = max(len(records), 6) 
@@ -1842,29 +1848,28 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 c = ws.cell(row=curr_row, column=col, value=val)
                 c.font = Font(name="TH SarabunPSK", size=16)
                 if col == 2 and val != "":
-                    # 📌 เปิดระบบ shrink_to_fit ย่อขนาดตัวอักษรอัตโนมัติถ้าชื่อยาวเกิน
-                    c.alignment = Alignment(horizontal="left", vertical="center", shrink_to_fit=True)
+                    # 📌 เอาคำสั่งบีบแบนออก ปล่อยตัวอักษรตามธรรมชาติ
+                    c.alignment = Alignment(horizontal="left", vertical="center")
                 else:
-                    c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
+                    c.alignment = Alignment(horizontal="center", vertical="center")
                 c.border = thin_border
+            ws.row_dimensions[curr_row].height = 22 # 📌 ปรับความสูงไม่ให้สระชนขอบ
             curr_row += 1
             
-        # 📌 เผื่อระยะห่างระหว่างวันให้สวยงาม
-        start_row = curr_row + 2 
+        # 📌 ถ่างระยะห่างระหว่างแต่ละตารางให้กว้างขึ้น ดูสบายตา
+        start_row = curr_row + 4 
         
-        # 📌 สั่งตัดหน้ากระดาษ (Page Break) เมื่อครบทุกๆ 4 วัน
+        # 📌 ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน
         if d % 4 == 0 and d != num_days:
-            ws.row_breaks.append(Break(id=start_row - 1))
+            ws.row_breaks.append(Break(id=start_row - 2))
 
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0 # 0 = ปล่อยให้มันล้นเป็นหน้าถัดไปได้เรื่อยๆ
+    ws.page_setup.fitToHeight = 0 
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-    
-    # 📌 จัดกึ่งกลางหน้ากระดาษแนวนอนเวลาปริ้น
-    ws.print_options.horizontalCentered = True
+    ws.print_options.horizontalCentered = True # 📌 จัดให้อยู่กึ่งกลางหน้ากระดาษ
 
     output = io.BytesIO()
     wb.save(output)
