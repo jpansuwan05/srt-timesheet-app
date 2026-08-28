@@ -160,11 +160,9 @@ def save_roster_to_local(df):
         roster_json = df.to_json(orient='records')
         emp_json = json.dumps(st.session_state.get('employees', {}))
         
-        # เข้ารหัสข้อมูลเป็น Base64 เพื่อป้องกันตัวอักษรพิเศษทำระบบพัง
         roster_b64 = base64.b64encode(roster_json.encode('utf-8')).decode('utf-8')
         emp_b64 = base64.b64encode(emp_json.encode('utf-8')).decode('utf-8')
         
-        # ยิงคำสั่งฝังข้อมูลลงเบราว์เซอร์โดยตรง!
         js_code = f"""
         <script>
             window.parent.localStorage.setItem('srt_roster_data', atob('{roster_b64}'));
@@ -292,7 +290,7 @@ def parse_employee_dataframe(df_input, is_regular_worker=True):
 # ==========================================
 saved_emp_json = local_storage.getItem("srt_employees_data")
 saved_sub_json = local_storage.getItem("srt_sub_db_data")
-saved_roster_json = local_storage.getItem("srt_roster_data") # 📌 สั่งดึงตารางเวรเตรียมไว้ตั้งแต่แรกเลย
+saved_roster_json = local_storage.getItem("srt_roster_data")
 
 if saved_emp_json and 'employees' not in st.session_state:
     try: st.session_state.employees = json.loads(saved_emp_json)
@@ -308,7 +306,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
         if st.button("🔄 กู้คืนข้อมูลล่าสุดกลับมาทำงานต่อ", type="primary"):
             st.session_state.employees = json.loads(saved_emp_json)
             
-            # 📌 กู้คืนตารางเวร (รหัสเวร) กลับมาด้วยทันที! ป้องกันการโดนตารางเปล่าทับ
             if saved_roster_json:
                 try:
                     loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
@@ -349,7 +346,6 @@ if 'employees' not in st.session_state or not st.session_state.employees:
     st.stop()
 
 if 'roster_df' not in st.session_state:
-    # 📌 ถ้าระบบยังไม่มีตารางเวร ให้ดึงจากที่โหลดเตรียมไว้
     if saved_roster_json:
         try:
             loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
@@ -370,7 +366,7 @@ if 'roster_df' not in st.session_state:
                      }
         except: pass
         
-    if 'roster_df' not in st.session_state: # ถ้ายังไม่มีอีก (สร้างใหม่จริงๆ) ค่อยสร้างตารางเปล่า
+    if 'roster_df' not in st.session_state: 
         data = []
         for i, (key, info) in enumerate(st.session_state.employees.items()):
             row = {"ขึ้นหน้าใหม่": False, "ลำดับ": i+1, "ชื่อ-สกุล": info['ชื่อ-สกุล'], "ตำแหน่งเบิก": info['ตำแหน่ง'], "Role (หน้าที่)": info['Role']}
@@ -379,7 +375,6 @@ if 'roster_df' not in st.session_state:
         df = pd.DataFrame(data)
         for d in range(1, 32): df[str(d)] = df[str(d)].astype(str)
         st.session_state.roster_df = sort_roster_by_role(df, st.session_state.employees)
-        # 📌 สำคัญมาก! ปิดการ Auto-Save ตารางเปล่าทับของเดิม เพื่อป้องกันข้อมูลรหัสเวรหาย!
 
 if 'ขึ้นหน้าใหม่' not in st.session_state.roster_df.columns:
     st.session_state.roster_df.insert(0, 'ขึ้นหน้าใหม่', False)
@@ -401,9 +396,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 💾 สำรองข้อมูลตารางเวร")
     
-    # 📌 ปุ่มกู้คืนฉุกเฉิน (อัปเกรดให้บังคับตารางรีเฟรชตัวเอง)
     if st.button("🔄 ดึงตารางเวรล่าสุดจากเบราว์เซอร์", help="หากตารางเวรหายไป ให้กดปุ่มนี้เพื่อดึงกลับมา"):
-        if saved_roster_json: # ใช้ข้อมูลที่ระบบแอบดึงเตรียมไว้แล้วตอนเปิดเว็บ
+        if saved_roster_json: 
             try:
                 loaded_df = pd.read_json(io.StringIO(saved_roster_json), orient='records')
                 for d in range(1, 32):
@@ -412,7 +406,6 @@ with st.sidebar:
                 
                 st.session_state.roster_df = loaded_df
                 
-                # 📌 ไม้แข็ง: สั่งล้างความจำของตารางเก่าทิ้ง เพื่อบังคับให้มันโชว์ข้อมูลใหม่!
                 if "roster_table" in st.session_state:
                     del st.session_state["roster_table"]
                     
@@ -831,7 +824,6 @@ with st.container(border=True):
                     st.session_state.employees[key]['ชื่อ-สกุล'] = name
                     st.session_state.employees[key]['ตำแหน่ง'] = row.get('ตำแหน่งเบิก', '')
             
-            # 📌 ลบ st.rerun() ทิ้ง แล้วใส่ข้อความนี้แทน เพื่อให้ระบบมีเวลาส่งข้อมูล
             st.success("💾 บันทึกตารางเวรเรียบร้อย! (ข้อมูลถูกฝังลงเบราว์เซอร์อย่างปลอดภัยแล้ว 100%)")
 
 # ==========================================
@@ -863,7 +855,6 @@ for d in range(1, num_days + 1):
             if is_reg: day_info[r_role]['reg'].append({'name': r_name, 'shift': shift_c})
             else: day_info[r_role]['sub'].append({'name': r_name, 'shift': shift_c})
 
-    # 📌 แก้บั๊กกรณีโหลดไฟล์ Backup แล้วระบบมองทุกคนเป็น "ผู้มาแทน"
     for r in roles_list:
         if not day_info[r]['reg'] and day_info[r]['sub']:
             day_info[r]['reg'].append(day_info[r]['sub'].pop(0))
@@ -885,7 +876,6 @@ for d in range(1, num_days + 1):
     active_ch1 = get_active('ช.นสน.1')
     active_ch2 = get_active('ช.นสน.2')
     
-    # 📌 ปลดล็อกกฎ: ถ้า นสน. ลาหยุด หรือไม่ได้ลงเวรปกติ อนุญาตให้ ช.นสน.1 และ ช.นสน.2 เข้าเวรซ้อนกันในช่วงเช้าได้
     is_nsn_absent = (reg_nsn_shift in leave_types) or (not reg_nsn_shift)
     
     if not is_nsn_absent:
@@ -1175,7 +1165,6 @@ def generate_177(emp_info, roster_data, global_vars, ind_vars, num_days):
                             shrink_to_fit=True
                         )
                 
-    # 📌 ระบบเรดาร์ 177 ค้นหาเลข 1
     start_row = 7
     for r in range(5, 15): 
         val1 = str(ws.cell(row=r, column=1).value).strip()
@@ -1333,7 +1322,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     else:
         salary_str = raw_salary
 
-    # 📌 อัปเดตให้ดึงไฟล์ "178 อัพเดท.xlsx" เป็นหลัก ถ้าไม่เจอให้ดึง "178 อัพเดท2.xlsx" ครับ
     try: 
         wb = openpyxl.load_workbook("178 อัพเดท.xlsx")
     except: 
@@ -1406,12 +1394,11 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
     daily_rate_db = float(emp_info.get("เรท_1วัน", 0.0))
     daily_rate = daily_rate_db if daily_rate_db > 0 else (rate_val * 8)
     
-    # 📌 ระบบเรดาร์ 178 ค้นหาเลข 1
     start_row = 7
     for r in range(5, 15):
         val1 = str(ws.cell(row=r, column=1).value).strip()
         if val1 == "1" or val1 == "1.0":
-            start_row = r - 1 # สำหรับ 178 บรรทัดที่ 1 จะถูกบวก 1 อีกทีในลูป
+            start_row = r - 1 
             break
             
     offset = start_row - 7
@@ -1509,7 +1496,6 @@ def generate_178(emp_info, roster_data, global_vars, ind_vars, num_days):
                     
     total_days_final = weekly_holiday_count + public_holiday_count
     
-    # 📌 การหาบรรทัดยอดรวม 178 อัตโนมัติ ป้องกันตารางเลื่อน
     type_acc_row = 39 + offset
     total_row = 42 + offset
     
@@ -1656,7 +1642,6 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
                             shrink_to_fit=True
                         )
 
-    # 📌 ระบบเรดาร์รายงานปฏิบัติงาน ค้นหาเลข 1
     start_row = 8
     for r in range(5, 15):
         val1 = str(ws.cell(row=r, column=1).value).strip()
@@ -1774,12 +1759,106 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     output.seek(0)
     return output
 
+def generate_signin_sheet(roster_df, global_vars, num_days):
+    try: 
+        wb = openpyxl.load_workbook("ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx")
+    except: 
+        return None
+    ws = wb.active
+    
+    title_1 = str(ws.cell(row=2, column=1).value)
+    title_2 = str(ws.cell(row=3, column=1).value)
+    
+    for merged in list(ws.merged_cells.ranges):
+        ws.unmerge_cells(str(merged))
+        
+    for r in range(1, ws.max_row + 1):
+        for c in range(1, 10):
+            ws.cell(row=r, column=c).value = None
+            ws.cell(row=r, column=c).border = Border()
+
+    month_name = global_vars.get("val_13", "")
+    year_be = global_vars.get("year_be", 2569)
+    
+    start_row = 1
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    
+    def get_times(shift):
+        s = shift.strip().replace("(", "").replace(")", "")
+        if s == "ว": return [("06.00 น.", "18.00 น.")]
+        if s == "ค": return [("00.00 น.", "06.00 น."), ("18.00 น.", "24.00 น.")]
+        if s == "ว/ค": return [("06.00 น.", "12.00 น."), ("18.00 น.", "24.00 น.")]
+        if s == "ค/ว": return [("00.00 น.", "06.00 น."), ("12.00 น.", "18.00 น.")]
+        if s in ["0-12", "00-12"]: return [("00.00 น.", "12.00 น.")]
+        if s == "12-24": return [("12.00 น.", "24.00 น.")]
+        if s == "00-24": return [("00.00 น.", "24.00 น.")]
+        return []
+    
+    for d in range(1, num_days + 1):
+        records = []
+        for _, row in roster_df.iterrows():
+            name = str(row.get('ชื่อ-สกุล', '')).strip()
+            shift = str(row.get(str(d), "")).strip()
+            times = get_times(shift)
+            for t in times:
+                records.append((name, t[0], t[1]))
+                
+        ws.merge_cells(start_row=start_row+1, start_column=1, end_row=start_row+1, end_column=7)
+        c = ws.cell(row=start_row+1, column=1, value=title_1)
+        c.font = Font(name="TH SarabunPSK", size=16, bold=True)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        
+        current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
+        
+        ws.merge_cells(start_row=start_row+2, start_column=1, end_row=start_row+2, end_column=7)
+        c = ws.cell(row=start_row+2, column=1, value=current_title_2)
+        c.font = Font(name="TH SarabunPSK", size=16, bold=True)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        
+        headers = ["ลำดับ", "ชื่อ - นามสกุล", "เวลาเข้า", "ลงชื่อ", "เวลาออก", "ลงชื่อ", "หมายเหตุ"]
+        for col, h in enumerate(headers, 1):
+            c = ws.cell(row=start_row+4, column=col, value=h)
+            c.font = Font(name="TH SarabunPSK", size=16, bold=True)
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = thin_border
+            
+        curr_row = start_row + 5
+        num_records = max(len(records), 6) 
+        
+        for i in range(num_records):
+            if i < len(records):
+                data = [i+1, records[i][0], records[i][1], "", records[i][2], "", ""]
+            else:
+                data = [i+1, "", "", "", "", "", ""]
+                
+            for col, val in enumerate(data, 1):
+                c = ws.cell(row=curr_row, column=col, value=val)
+                c.font = Font(name="TH SarabunPSK", size=16)
+                if col == 2 and val != "":
+                    c.alignment = Alignment(horizontal="left", vertical="center")
+                else:
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                c.border = thin_border
+            curr_row += 1
+            
+        start_row = curr_row + 1 
+
+    if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
 # ==========================================
 # 6. เมนูส่งออก (Export)
 # ==========================================
 with st.container(border=True):
     st.subheader("🖨️ 3. ส่งออกเอกสาร Excel สำเร็จรูป")
-    tab1, tab2, tab3 = st.tabs(["📄 ส่งออก 109", "👤 ส่งออกรายบุคคล", "📦 ส่งออกแบบกลุ่ม (หลายคนพร้อมกัน)"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📄 ส่งออก 109", "👤 ส่งออกรายบุคคล", "📦 ส่งออกแบบกลุ่ม (หลายคนพร้อมกัน)", "📝 ตารางลงชื่อ (รายวัน)"])
 
     with tab1:
         st.markdown("**ตารางเวร 109 ของทั้งสถานี** (จัดหน้ากระดาษอัตโนมัติ)")
@@ -2055,3 +2134,15 @@ with st.container(border=True):
                 mime="application/zip",
                 use_container_width=True
             )
+
+    with tab4:
+        st.markdown("**สร้างตารางลงชื่อปฏิบัติงานของสถานี (มีทุกวันในเดือนเรียงต่อกัน)**")
+        st.info("💡 ระบบจะดึงรายชื่อและกะเวลา (ว, ค ฯลฯ) ในแต่ละวัน มาแปลงเป็นตารางให้พนักงานเซ็นชื่ออัตโนมัติ")
+        
+        if st.button("📝 คลิกเพื่อสร้างตารางลงชื่อปฏิบัติงานรายวัน", type="primary"):
+            excel_signin = generate_signin_sheet(st.session_state.roster_df, global_data, num_days)
+            if excel_signin:
+                st.success(f"สร้างไฟล์ตารางลงชื่อเสร็จสิ้น! (รวมตารางตั้งแต่ วันที่ 1 ถึง {num_days})")
+                st.download_button("📥 ดาวน์โหลดตารางลงชื่อ (.xlsx)", data=excel_signin, file_name=f"ตารางลงชื่อ_{global_data['val_13']}.xlsx", use_container_width=True)
+            else:
+                st.error("ไม่พบไฟล์ 'ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx' ในระบบ (กรุณาอัปโหลดก่อนครับ)")
