@@ -1762,6 +1762,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 def generate_signin_sheet(roster_df, global_vars, num_days):
     from openpyxl.worksheet.pagebreak import Break
     from openpyxl.worksheet.page import PageMargins 
+    import math
     
     try: 
         wb = openpyxl.load_workbook("ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx")
@@ -1786,7 +1787,14 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     start_row = 1
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     
-    ws.column_dimensions['B'].width = 28
+    # 📌 1. ล็อกความกว้างแต่ละคอลัมน์ให้สมดุล เพื่อให้ตารางอยู่กึ่งกลางหน้ากระดาษพอดี
+    ws.column_dimensions['A'].width = 6   # ลำดับ
+    ws.column_dimensions['B'].width = 30  # ชื่อ-สกุล (กว้างพิเศษ)
+    ws.column_dimensions['C'].width = 12  # เวลาเข้า
+    ws.column_dimensions['D'].width = 12  # ลงชื่อ
+    ws.column_dimensions['E'].width = 12  # เวลาออก
+    ws.column_dimensions['F'].width = 12  # ลงชื่อ
+    ws.column_dimensions['G'].width = 15  # หมายเหตุ
     
     def get_times(shift):
         s = shift.strip().replace("(", "").replace(")", "")
@@ -1813,33 +1821,29 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
             for t in times:
                 records.append((name, t[0], t[1]))
                 
-        # 📌 แถวที่ 1 ของตาราง: หัวข้อ
         ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=7)
         c = ws.cell(row=start_row, column=1, value=title_1)
         c.font = Font(name="TH SarabunPSK", size=18, bold=True)
-        c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[start_row].height = 24 
+        c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
+        ws.row_dimensions[start_row].height = 20 # 📌 ปรับความสูงลงนิดนึงเพื่อยัด 4 ตาราง
         
-        # 📌 แถวที่ 2 ของตาราง: วันที่
         current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
         ws.merge_cells(start_row=start_row+1, start_column=1, end_row=start_row+1, end_column=7)
         c = ws.cell(row=start_row+1, column=1, value=current_title_2)
         c.font = Font(name="TH SarabunPSK", size=16, bold=True)
-        c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[start_row+1].height = 22 
+        c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
+        ws.row_dimensions[start_row+1].height = 18 
         
-        # 📌 แถวที่ 3 ของตาราง: หัวคอลัมน์ (ตัด Row ว่างๆ ตรงนี้ทิ้งไป 1 บรรทัด!)
         headers = ["ลำดับ", "ชื่อ - นามสกุล", "เวลาเข้า", "ลงชื่อ", "เวลาออก", "ลงชื่อ", "หมายเหตุ"]
         for col, h in enumerate(headers, 1):
             c = ws.cell(row=start_row+2, column=col, value=h)
             c.font = Font(name="TH SarabunPSK", size=16, bold=True)
-            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
             c.border = thin_border
-        ws.row_dimensions[start_row+2].height = 22 
+        ws.row_dimensions[start_row+2].height = 18 
             
         curr_row = start_row + 3
         
-        # 📌 คืนค่าช่องตารางเปล่า ให้มี 6 บรรทัดเสมอ ตามที่ตกลงกันครับ
         num_records = max(len(records), 6) 
         
         for i in range(num_records):
@@ -1852,30 +1856,32 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 c = ws.cell(row=curr_row, column=col, value=val)
                 c.font = Font(name="TH SarabunPSK", size=16)
                 if col == 2 and val != "":
-                    c.alignment = Alignment(horizontal="left", vertical="center")
+                    # 📌 2. เปิด shrink_to_fit ป้องกันอักษรเด้งขึ้นบรรทัดใหม่จนทับกัน
+                    c.alignment = Alignment(horizontal="left", vertical="center", shrink_to_fit=True)
                 else:
-                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
                 c.border = thin_border
-            ws.row_dimensions[curr_row].height = 22 
+            ws.row_dimensions[curr_row].height = 18 
             curr_row += 1
             
-        # 📌 ตัด Row ว่างๆ ระหว่างวัน ทิ้งไปอีก 1 บรรทัด (ให้ตารางขยับชิดกันขึ้น)
+        # 📌 3. ช่องว่างระหว่างวันตั้งให้แคบลง เพื่อประหยัดพื้นที่
         start_row = curr_row + 1 
+        ws.row_dimensions[curr_row].height = 12 
         
-        # 📌 ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน
+        # ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน
         if d % 4 == 0 and d != num_days:
             ws.row_breaks.append(Break(id=start_row - 1))
 
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0 
+    # 📌 4. บังคับสเกลหน้าให้คำนวณจำนวนหน้าตามจริง (ป้องกัน Excel แทรกหน้าขาว)
+    ws.page_setup.fitToHeight = math.ceil(num_days / 4) 
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-    ws.print_options.horizontalCentered = True 
+    ws.print_options.horizontalCentered = True # จัดตารางให้อยู่กึ่งกลางหน้าเป๊ะๆ
     
-    # 📌 บีบขอบกระดาษ บน-ล่าง ให้กว้างขึ้นเพื่อใส่ 4 ตารางลงแบบสบายๆ
-    ws.page_margins = PageMargins(top=0.3, bottom=0.3, left=0.25, right=0.25, header=0.2, footer=0.2)
+    ws.page_margins = PageMargins(top=0.3, bottom=0.3, left=0.3, right=0.3, header=0.2, footer=0.2)
 
     output = io.BytesIO()
     wb.save(output)
