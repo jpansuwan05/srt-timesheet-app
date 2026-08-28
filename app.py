@@ -1797,9 +1797,17 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     for d in range(1, num_days + 1):
         records = []
         for _, row in roster_df.iterrows():
+            # 📌 1. กรองดึงมาเฉพาะกลุ่ม นสน., ช.นสน.1 และ ช.นสน.2
+            role = str(row.get('Role (หน้าที่)', '')).strip()
+            if role not in ["นสน.", "ช.นสน.1", "ช.นสน.2"]:
+                continue
+                
             name = str(row.get('ชื่อ-สกุล', '')).strip()
             shift = str(row.get(str(d), "")).strip()
             times = get_times(shift)
+            
+            # 📌 2. ฟังก์ชัน get_times() จะคืนค่าว่าง [] ทันทีถ้าเป็นรหัสวันหยุด (ย,น,พ ฯลฯ) 
+            # ทำให้คนที่หยุดหรือไม่มีเวร จะไม่ถูกนำชื่อมาต่อแถวใน records โดยอัตโนมัติ!
             for t in times:
                 records.append((name, t[0], t[1]))
                 
