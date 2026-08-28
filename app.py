@@ -1761,6 +1761,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 
 def generate_signin_sheet(roster_df, global_vars, num_days):
     from openpyxl.worksheet.pagebreak import Break
+    from openpyxl.worksheet.page import PageMargins # 📌 นำเข้าตัวตั้งค่าขอบกระดาษ
     
     try: 
         wb = openpyxl.load_workbook("ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx")
@@ -1785,7 +1786,6 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     start_row = 1
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     
-    # 📌 ขยายความกว้างคอลัมน์ชื่อให้กว้างขึ้น ตัวอักษรจะได้ไม่ตกหล่นและไม่ต้องบีบแบน
     ws.column_dimensions['B'].width = 28
     
     def get_times(shift):
@@ -1817,7 +1817,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
         c = ws.cell(row=start_row+1, column=1, value=title_1)
         c.font = Font(name="TH SarabunPSK", size=18, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[start_row+1].height = 25 # 📌 เพิ่มช่องไฟความสูงแถว
+        ws.row_dimensions[start_row+1].height = 22 # 📌 ปรับลดความสูงให้พอดี 4 ตาราง
         
         current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
         
@@ -1825,7 +1825,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
         c = ws.cell(row=start_row+2, column=1, value=current_title_2)
         c.font = Font(name="TH SarabunPSK", size=16, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[start_row+2].height = 22
+        ws.row_dimensions[start_row+2].height = 20 # 📌 ปรับลดความสูง
         
         headers = ["ลำดับ", "ชื่อ - นามสกุล", "เวลาเข้า", "ลงชื่อ", "เวลาออก", "ลงชื่อ", "หมายเหตุ"]
         for col, h in enumerate(headers, 1):
@@ -1833,7 +1833,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
             c.font = Font(name="TH SarabunPSK", size=16, bold=True)
             c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = thin_border
-        ws.row_dimensions[start_row+4].height = 22
+        ws.row_dimensions[start_row+4].height = 20 # 📌 ปรับลดความสูง
             
         curr_row = start_row + 5
         num_records = max(len(records), 6) 
@@ -1848,20 +1848,19 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 c = ws.cell(row=curr_row, column=col, value=val)
                 c.font = Font(name="TH SarabunPSK", size=16)
                 if col == 2 and val != "":
-                    # 📌 เอาคำสั่งบีบแบนออก ปล่อยตัวอักษรตามธรรมชาติ
                     c.alignment = Alignment(horizontal="left", vertical="center")
                 else:
                     c.alignment = Alignment(horizontal="center", vertical="center")
                 c.border = thin_border
-            ws.row_dimensions[curr_row].height = 22 # 📌 ปรับความสูงไม่ให้สระชนขอบ
+            ws.row_dimensions[curr_row].height = 20 # 📌 ปรับลดความสูง
             curr_row += 1
             
-        # 📌 ถ่างระยะห่างระหว่างแต่ละตารางให้กว้างขึ้น ดูสบายตา
-        start_row = curr_row + 4 
+        # 📌 ลดระยะห่างระหว่างวันให้ชิดขึ้นอีกนิด
+        start_row = curr_row + 2 
         
         # 📌 ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน
         if d % 4 == 0 and d != num_days:
-            ws.row_breaks.append(Break(id=start_row - 2))
+            ws.row_breaks.append(Break(id=start_row - 1))
 
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -1869,7 +1868,10 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     ws.page_setup.fitToHeight = 0 
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-    ws.print_options.horizontalCentered = True # 📌 จัดให้อยู่กึ่งกลางหน้ากระดาษ
+    ws.print_options.horizontalCentered = True 
+    
+    # 📌 บีบขอบกระดาษ บน-ล่าง (Margins) เพื่อบังคับให้ใส่ได้ 4 ตารางชัวร์ๆ
+    ws.page_margins = PageMargins(top=0.4, bottom=0.4, left=0.25, right=0.25, header=0.3, footer=0.3)
 
     output = io.BytesIO()
     wb.save(output)
