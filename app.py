@@ -1787,14 +1787,13 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     start_row = 1
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
     
-    # 📌 1. ล็อกความกว้างแต่ละคอลัมน์ให้สมดุล เพื่อให้ตารางอยู่กึ่งกลางหน้ากระดาษพอดี
-    ws.column_dimensions['A'].width = 6   # ลำดับ
-    ws.column_dimensions['B'].width = 30  # ชื่อ-สกุล (กว้างพิเศษ)
-    ws.column_dimensions['C'].width = 12  # เวลาเข้า
-    ws.column_dimensions['D'].width = 12  # ลงชื่อ
-    ws.column_dimensions['E'].width = 12  # เวลาออก
-    ws.column_dimensions['F'].width = 12  # ลงชื่อ
-    ws.column_dimensions['G'].width = 15  # หมายเหตุ
+    ws.column_dimensions['A'].width = 6   
+    ws.column_dimensions['B'].width = 30  
+    ws.column_dimensions['C'].width = 12  
+    ws.column_dimensions['D'].width = 12  
+    ws.column_dimensions['E'].width = 12  
+    ws.column_dimensions['F'].width = 12  
+    ws.column_dimensions['G'].width = 15  
     
     def get_times(shift):
         s = shift.strip().replace("(", "").replace(")", "")
@@ -1825,7 +1824,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
         c = ws.cell(row=start_row, column=1, value=title_1)
         c.font = Font(name="TH SarabunPSK", size=18, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
-        ws.row_dimensions[start_row].height = 20 # 📌 ปรับความสูงลงนิดนึงเพื่อยัด 4 ตาราง
+        ws.row_dimensions[start_row].height = 20 
         
         current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
         ws.merge_cells(start_row=start_row+1, start_column=1, end_row=start_row+1, end_column=7)
@@ -1856,7 +1855,6 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 c = ws.cell(row=curr_row, column=col, value=val)
                 c.font = Font(name="TH SarabunPSK", size=16)
                 if col == 2 and val != "":
-                    # 📌 2. เปิด shrink_to_fit ป้องกันอักษรเด้งขึ้นบรรทัดใหม่จนทับกัน
                     c.alignment = Alignment(horizontal="left", vertical="center", shrink_to_fit=True)
                 else:
                     c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
@@ -1864,23 +1862,22 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
             ws.row_dimensions[curr_row].height = 18 
             curr_row += 1
             
-        # 📌 3. ช่องว่างระหว่างวันตั้งให้แคบลง เพื่อประหยัดพื้นที่
         start_row = curr_row + 1 
         ws.row_dimensions[curr_row].height = 12 
         
-        # ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน
+        # 📌 ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน ให้แม่นยำ
         if d % 4 == 0 and d != num_days:
             ws.row_breaks.append(Break(id=start_row - 1))
 
+    # 📌 ปิดโหมด fitToPage แล้วใช้โหมดลดสเกลเพื่อการันตีว่าเนื้อหาไม่ล้น A4
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth = 1
-    # 📌 4. บังคับสเกลหน้าให้คำนวณจำนวนหน้าตามจริง (ป้องกัน Excel แทรกหน้าขาว)
-    ws.page_setup.fitToHeight = math.ceil(num_days / 4) 
+    ws.sheet_properties.pageSetUpPr.fitToPage = False
+    
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-    ws.print_options.horizontalCentered = True # จัดตารางให้อยู่กึ่งกลางหน้าเป๊ะๆ
+    ws.page_setup.scale = 92 # 📌 บีบสเกลลงเหลือ 92% ป้องกันบรรทัดสุดท้ายหลุดไปหน้าใหม่
     
+    ws.print_options.horizontalCentered = True 
     ws.page_margins = PageMargins(top=0.3, bottom=0.3, left=0.3, right=0.3, header=0.2, footer=0.2)
 
     output = io.BytesIO()
