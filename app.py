@@ -1760,6 +1760,8 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
     return output
 
 def generate_signin_sheet(roster_df, global_vars, num_days):
+    from openpyxl.worksheet.pagebreak import Break  # นำเข้าตัวสั่งตัดหน้ากระดาษ
+    
     try: 
         wb = openpyxl.load_workbook("ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx")
     except: 
@@ -1797,7 +1799,6 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
     for d in range(1, num_days + 1):
         records = []
         for _, row in roster_df.iterrows():
-            # 📌 1. กรองดึงมาเฉพาะกลุ่ม นสน., ช.นสน.1 และ ช.นสน.2
             role = str(row.get('Role (หน้าที่)', '')).strip()
             if role not in ["นสน.", "ช.นสน.1", "ช.นสน.2"]:
                 continue
@@ -1806,8 +1807,6 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
             shift = str(row.get(str(d), "")).strip()
             times = get_times(shift)
             
-            # 📌 2. ฟังก์ชัน get_times() จะคืนค่าว่าง [] ทันทีถ้าเป็นรหัสวันหยุด (ย,น,พ ฯลฯ) 
-            # ทำให้คนที่หยุดหรือไม่มีเวร จะไม่ถูกนำชื่อมาต่อแถวใน records โดยอัตโนมัติ!
             for t in times:
                 records.append((name, t[0], t[1]))
                 
@@ -1843,18 +1842,29 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 c = ws.cell(row=curr_row, column=col, value=val)
                 c.font = Font(name="TH SarabunPSK", size=16)
                 if col == 2 and val != "":
-                    c.alignment = Alignment(horizontal="left", vertical="center")
+                    # 📌 เปิดระบบ shrink_to_fit ย่อขนาดตัวอักษรอัตโนมัติถ้าชื่อยาวเกิน
+                    c.alignment = Alignment(horizontal="left", vertical="center", shrink_to_fit=True)
                 else:
-                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    c.alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
                 c.border = thin_border
             curr_row += 1
             
-        start_row = curr_row + 1 
+        # 📌 เผื่อระยะห่างระหว่างวันให้สวยงาม
+        start_row = curr_row + 2 
+        
+        # 📌 สั่งตัดหน้ากระดาษ (Page Break) เมื่อครบทุกๆ 4 วัน
+        if d % 4 == 0 and d != num_days:
+            ws.row_breaks.append(Break(id=start_row - 1))
 
     if not ws.sheet_properties.pageSetUpPr: ws.sheet_properties.pageSetUpPr = PageSetupProperties()
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4; ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0 # 0 = ปล่อยให้มันล้นเป็นหน้าถัดไปได้เรื่อยๆ
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    
+    # 📌 จัดกึ่งกลางหน้ากระดาษแนวนอนเวลาปริ้น
+    ws.print_options.horizontalCentered = True
 
     output = io.BytesIO()
     wb.save(output)
