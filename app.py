@@ -1761,7 +1761,7 @@ def generate_report_work(emp_info, roster_data, global_vars, ind_vars, num_days)
 
 def generate_signin_sheet(roster_df, global_vars, num_days):
     from openpyxl.worksheet.pagebreak import Break
-    from openpyxl.worksheet.page import PageMargins # 📌 นำเข้าตัวตั้งค่าขอบกระดาษ
+    from openpyxl.worksheet.page import PageMargins 
     
     try: 
         wb = openpyxl.load_workbook("ตารางปฏิบัติงานพนักงาน บริษัทวันทูวัน.xlsx")
@@ -1817,7 +1817,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
         c = ws.cell(row=start_row+1, column=1, value=title_1)
         c.font = Font(name="TH SarabunPSK", size=18, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[start_row+1].height = 22 # 📌 ปรับลดความสูงให้พอดี 4 ตาราง
+        ws.row_dimensions[start_row+1].height = 24 # คืนความสูงให้ดูโปร่งขึ้น
         
         current_title_2 = title_2.replace("[18]", f"{d:02d}").replace("[19]", month_name)
         
@@ -1825,7 +1825,7 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
         c = ws.cell(row=start_row+2, column=1, value=current_title_2)
         c.font = Font(name="TH SarabunPSK", size=16, bold=True)
         c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[start_row+2].height = 20 # 📌 ปรับลดความสูง
+        ws.row_dimensions[start_row+2].height = 22 
         
         headers = ["ลำดับ", "ชื่อ - นามสกุล", "เวลาเข้า", "ลงชื่อ", "เวลาออก", "ลงชื่อ", "หมายเหตุ"]
         for col, h in enumerate(headers, 1):
@@ -1833,10 +1833,12 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
             c.font = Font(name="TH SarabunPSK", size=16, bold=True)
             c.alignment = Alignment(horizontal="center", vertical="center")
             c.border = thin_border
-        ws.row_dimensions[start_row+4].height = 20 # 📌 ปรับลดความสูง
+        ws.row_dimensions[start_row+4].height = 22 
             
         curr_row = start_row + 5
-        num_records = max(len(records), 6) 
+        
+        # 📌 ตัดบรรทัดว่างทิ้ง! บังคับให้ตารางมีจำนวนบรรทัดเท่ากับคนทำงานจริงเท่านั้น
+        num_records = len(records) if len(records) > 0 else 1 
         
         for i in range(num_records):
             if i < len(records):
@@ -1852,10 +1854,10 @@ def generate_signin_sheet(roster_df, global_vars, num_days):
                 else:
                     c.alignment = Alignment(horizontal="center", vertical="center")
                 c.border = thin_border
-            ws.row_dimensions[curr_row].height = 20 # 📌 ปรับลดความสูง
+            ws.row_dimensions[curr_row].height = 22 # คืนความสูงให้ดูโปร่งขึ้น
             curr_row += 1
             
-        # 📌 ลดระยะห่างระหว่างวันให้ชิดขึ้นอีกนิด
+        # 📌 ระยะห่างระหว่างตารางในแต่ละวัน
         start_row = curr_row + 2 
         
         # 📌 ตัดหน้ากระดาษ (Page Break) ทุกๆ 4 วัน
